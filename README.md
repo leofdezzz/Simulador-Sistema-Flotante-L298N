@@ -1,6 +1,6 @@
 # Simulador Sistema Flotante
 
-Simulador visual e interactivo de aerogeneradores flotantes en un tanque de agua con efecto estela (wake effect). Basado en el proyecto [Floating Farm]([https://github.com/](https://github.com/leofdezzz/Sistema-Flotante)) que utiliza un Raspberry Pi Pico para controlar un aerogenerador flotante real.
+Simulador visual e interactivo de aerogeneradores flotantes en un tanque de agua con efecto estela (wake effect). Basado en el proyecto [Floating Farm](https://github.com/](https://github.com/leofdezzz/Sistema-Flotante)) que utiliza un Raspberry Pi Pico para controlar un aerogenerador flotante real.
 
 ## Descripcion
 
