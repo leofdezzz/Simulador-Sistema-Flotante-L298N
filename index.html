@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Floating Farm Simulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>🌊 Floating Farm Simulator</h1>
+            <p class="subtitle">Simulador de aerogeneradores flotantes con efecto estela</p>
+        </header>
+
+        <div id="main-layout">
+            <aside id="controls">
+                <section class="control-group">
+                    <h3>Dirección del Viento</h3>
+                    <div id="wind-compass">
+                        <button class="wind-btn" data-dir="6" title="↖ Izq-Arriba">↖</button>
+                        <button class="wind-btn" data-dir="2" title="↑ Arriba">↑</button>
+                        <button class="wind-btn" data-dir="4" title="↗ Der-Arriba">↗</button>
+                        <button class="wind-btn" data-dir="0" title="← Izquierda">←</button>
+                        <div class="compass-center" id="compass-indicator">●</div>
+                        <button class="wind-btn" data-dir="1" title="→ Derecha">→</button>
+                        <button class="wind-btn" data-dir="5" title="↙ Izq-Abajo">↙</button>
+                        <button class="wind-btn" data-dir="3" title="↓ Abajo">↓</button>
+                        <button class="wind-btn" data-dir="7" title="↘ Der-Abajo">↘</button>
+                    </div>
+                    <div class="wind-speed-control">
+                        <label>Velocidad: <span id="wind-speed-val">5.0</span> m/s</label>
+                        <input type="range" id="wind-speed" min="1" max="15" step="0.5" value="5">
+                    </div>
+                </section>
+
+                <section class="control-group">
+                    <h3>Aerogeneradores</h3>
+                    <button id="btn-add-turbine" class="action-btn">+ Agregar Aerogenerador</button>
+                    <button id="btn-remove-turbine" class="action-btn danger">− Quitar Último</button>
+                    <div id="turbine-list"></div>
+                </section>
+
+                <section class="control-group">
+                    <h3>Pared</h3>
+                    <div class="wall-orient-toggle">
+                        <button id="btn-wall-v" class="orient-btn active" title="Pared vertical">│ Vertical</button>
+                        <button id="btn-wall-h" class="orient-btn" title="Pared horizontal">─ Horizontal</button>
+                    </div>
+                    <div class="wall-controls">
+                        <label><span id="wall-pos-label">Posición X</span>: <span id="wall-pos-val">50</span>%</label>
+                        <input type="range" id="wall-position" min="10" max="90" step="1" value="50">
+                    </div>
+                    <div class="wall-controls">
+                        <label>Tamaño agujeros: <span id="hole-size-val">80</span>px</label>
+                        <input type="range" id="hole-size" min="20" max="150" step="5" value="80">
+                    </div>
+                    <button id="btn-add-hole" class="action-btn">+ Agregar Agujero</button>
+                    <button id="btn-remove-hole" class="action-btn danger">− Quitar Último Agujero</button>
+                    <div id="hole-list"></div>
+                </section>
+
+                <section class="control-group">
+                    <h3>Simulación</h3>
+                    <button id="btn-start-search" class="action-btn primary">▶ Iniciar Búsqueda</button>
+                    <button id="btn-reset" class="action-btn">↺ Resetear Posiciones</button>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="chk-show-wake" checked> Mostrar estela
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="chk-show-wind" checked> Mostrar partículas
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="chk-show-field" > Mostrar campo de viento
+                    </label>
+                </section>
+
+                <section class="control-group">
+                    <h3>Información</h3>
+                    <div id="info-panel">
+                        <div class="info-row">
+                            <span>Turbinas:</span>
+                            <span id="info-turbines">0</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Agujeros:</span>
+                            <span id="info-holes">1</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Estado:</span>
+                            <span id="info-status">Esperando</span>
+                        </div>
+                    </div>
+                </section>
+            </aside>
+
+            <main id="canvas-container">
+                <canvas id="sim-canvas"></canvas>
+                <div id="canvas-tooltip" class="tooltip hidden"></div>
+            </main>
+        </div>
+    </div>
+
+    <script src="simulator.js?v=8"></script>
+</body>
+</html>
