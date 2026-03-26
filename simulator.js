@@ -222,7 +222,10 @@ function wakeDef(turb, px, py) {
     if (perp >= R) return 0;
     const deficit = 2*CFG.WAKE_A / ((1 + CFG.WAKE_K*ds/tr)**2);
     const rr = perp/R;
-    return deficit * Math.exp(-2*rr*rr);
+    // Perfil "top-hat" con bordes suaves: mantiene déficit fuerte
+    // hasta ~70% del radio, luego cae suavemente. Más realista que
+    // Gaussiano puro y hace que los bordes del rotor noten la estela.
+    return deficit * Math.max(0, 1 - rr*rr);
 }
 
 function windAt(px, py, exclude) {
@@ -236,7 +239,7 @@ function windAt(px, py, exclude) {
 
 // Rotor-averaged wind: samples across the rotor disk perpendicular to wind.
 // This makes turbines feel the wake as soon as the rotor edge enters it.
-const ROTOR_SAMPLES = 5; // points across the rotor diameter
+const ROTOR_SAMPLES = 9; // points across the rotor diameter (más muestras = mejor detección de solapamiento parcial)
 function windAtRotor(cx2, cy2, exclude) {
     const w = WIND_DIRS[S.windDir];
     const tr = turbR();
