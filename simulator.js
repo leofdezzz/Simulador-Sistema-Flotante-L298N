@@ -234,6 +234,24 @@ function windAt(px, py, exclude) {
     return Math.max(0, v);
 }
 
+// Rotor-averaged wind: samples across the rotor disk perpendicular to wind.
+// This makes turbines feel the wake as soon as the rotor edge enters it.
+const ROTOR_SAMPLES = 5; // points across the rotor diameter
+function windAtRotor(cx2, cy2, exclude) {
+    const w = WIND_DIRS[S.windDir];
+    const tr = turbR();
+    // Perpendicular direction to wind
+    const px = -w.dy, py = w.dx;
+    let total = 0;
+    for (let i = 0; i < ROTOR_SAMPLES; i++) {
+        const frac = (i / (ROTOR_SAMPLES - 1)) * 2 - 1; // -1 to +1
+        const sx = cx2 + px * tr * frac;
+        const sy = cy2 + py * tr * frac;
+        total += windAt(sx, sy, exclude);
+    }
+    return total / ROTOR_SAMPLES;
+}
+
 function windToVoltage(v) {
     const n = v/15;
     return Math.min(100, n*n*n * 300);
@@ -321,7 +339,7 @@ function updateSearch(dt) {
             for (let i=0; i<S.turbines.length; i++) {
                 const turb = S.turbines[i];
                 const step = 6;
-                const cur = windAt(turb.x, turb.y, turb);
+                const cur = windAtRotor(turb.x, turb.y, turb);
                 let bx=0, by=0, bv=cur;
                 for (let a=0; a<12; a++) {
                     const ang = a/12*Math.PI*2;
@@ -334,7 +352,7 @@ function updateSearch(dt) {
                         if (dist(nx,ny,S.turbines[j].x,S.turbines[j].y)<minTurbDist()) { ok=false; break; }
                     }
                     if (!ok) continue;
-                    const v = windAt(nx, ny, turb);
+                    const v = windAtRotor(nx, ny, turb);
                     if (v > bv+0.01) { bv=v; bx=Math.cos(ang)*step*0.8; by=Math.sin(ang)*step*0.8; }
                 }
                 if (bx||by) {
@@ -384,7 +402,7 @@ function updateSearch(dt) {
                 }
             }
             if (ok) {
-                sp.v = windAt(sp.x, sp.y, turb);
+                sp.v = windAtRotor(sp.x, sp.y, turb);
                 if (sp.v > turb.bestScan.v) {
                     turb.bestScan = { x:sp.x, y:sp.y, v:sp.v };
                 }
@@ -429,7 +447,7 @@ function updateSearch(dt) {
         } else {
             // Find next best direction
             const step = 8;
-            const cur = windAt(turb.x, turb.y, turb);
+            const cur = windAtRotor(turb.x, turb.y, turb);
             let bx=0, by=0, bv=cur;
             for (let a=0; a<12; a++) {
                 const ang = a/12*Math.PI*2;
@@ -442,7 +460,7 @@ function updateSearch(dt) {
                     if (dist(nx,ny,S.turbines[j].x,S.turbines[j].y)<minTurbDist()) { ok=false; break; }
                 }
                 if (!ok) continue;
-                const v = windAt(nx, ny, turb);
+                const v = windAtRotor(nx, ny, turb);
                 if (v > bv + 0.01) { bv=v; bx=Math.cos(ang)*step*1.0; by=Math.sin(ang)*step*1.0; }
             }
             if (bx||by) {
@@ -464,7 +482,7 @@ function continuousOptimize() {
     for (let i=0; i<S.turbines.length; i++) {
         const turb = S.turbines[i];
         if (turb.phase !== 'done') continue;
-        const step = 4, cur = windAt(turb.x,turb.y,turb);
+        const step = 4, cur = windAtRotor(turb.x,turb.y,turb);
         let bx=0,by=0,bv=cur;
         for (let a=0; a<8; a++) {
             const ang = a/8*Math.PI*2;
@@ -477,7 +495,7 @@ function continuousOptimize() {
                 if(dist(nx,ny,S.turbines[j].x,S.turbines[j].y)<minTurbDist()){ok=false;break;}
             }
             if(!ok) continue;
-            const v = windAt(nx,ny,turb);
+            const v = windAtRotor(nx,ny,turb);
             if (v > bv+0.06) { bv=v; bx=Math.cos(ang)*0.5; by=Math.sin(ang)*0.5; }
         }
         if (bx||by) {
@@ -861,7 +879,7 @@ function update(dt) {
     updateSearch(dt);
     continuousOptimize();
     for (const t of S.turbines) {
-        const ws = windAt(t.x,t.y);
+        const ws = windAtRotor(t.x,t.y,t);
         t.voltage = windToVoltage(ws);
         t.bladeSpeed = ws*0.06;
         t.bladeAngle = (t.bladeAngle||0) + t.bladeSpeed*dt;
@@ -1167,7 +1185,7 @@ function onMove(e) {
     for (let i=0;i<S.turbines.length;i++) {
         const tb=S.turbines[i];
         if (dist(mx,my,tb.x,tb.y)<turbR()+8) {
-            const ws=windAt(tb.x,tb.y);
+            const ws=windAtRotor(tb.x,tb.y,tb);
             tip.classList.remove("hidden");
             tip.style.left=(mx+15)+"px"; tip.style.top=(my-30)+"px";
             tip.innerHTML=`<b>Turbina ${i+1}</b><br>Voltaje: ${tb.voltage.toFixed(1)}V<br>Viento: ${ws.toFixed(1)} m/s`;
