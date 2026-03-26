@@ -323,3 +323,37 @@ label {
 .wind-speed-control {
     margin-top: 4px;
 }
+
+/* Mode toggle */
+.mode-toggle {
+    display: flex;
+    gap: 4px;
+}
+
+.mode-btn {
+    flex: 1;
+    padding: 8px 8px;
+    border: 1px solid #2a3a5c;
+    border-radius: 6px;
+    background: #1a2440;
+    color: #8ab4d8;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.mode-btn:hover {
+    background: #253a5c;
+    border-color: #4a8ad8;
+}
+
+.mode-btn.active {
+    background: #1a4a7a;
+    border-color: #4a9af0;
+    color: #fff;
+    box-shadow: 0 0 10px rgba(74, 154, 240, 0.25);
+}
+
+#wall-section.hidden-section {
+    display: none;
+}

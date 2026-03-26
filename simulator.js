@@ -26,13 +26,23 @@ const CFG = {
     SEARCH_SPEED: 3.0,
     SCAN_GRID: 22,
     MIN_TURB_DIST: 55,
+    MOVE_RANGE: 120,       // Radio máximo de movimiento desde posición inicial
     TRAIL_FADE_TIME: 2.0,  // Segundos que tarda el trail en desaparecer
+    // Free mode overrides
+    FREE_TURBINE_R: 28,
+    FREE_BLADE_LEN: 24,
+    FREE_MIN_TURB_DIST: 85,
     COL_WATER_A: "#081e38",
     COL_WATER_B: "#0c2d50",
     COL_WALL: "#6a7a9a",
     COL_HOLE: "#4af0a0",
     COL_BLADE: ["#5ecfff","#ff8c5e","#c084fc","#facc15","#f472b6","#34d399","#fb7185","#38bdf8"],
 };
+
+// Effective config values (change with mode)
+function turbR()      { return S.mode === 'free' ? CFG.FREE_TURBINE_R : CFG.TURBINE_R; }
+function bladeLen()   { return S.mode === 'free' ? CFG.FREE_BLADE_LEN : CFG.BLADE_LEN; }
+function minTurbDist(){ return S.mode === 'free' ? CFG.FREE_MIN_TURB_DIST : CFG.MIN_TURB_DIST; }
 
 // Wind vectors: where the wind FLOWS toward (away from the source)
 // Button arrows show where wind COMES FROM, vector is the opposite
@@ -52,6 +62,7 @@ WIND_DIRS.forEach(d => { const m = Math.hypot(d.dx,d.dy); if(m>1){d.dx/=m;d.dy/=
 const S = {
     windDir: 0,  windSpeed: 5,  wallPct: 50,
     wallOrient: 'vertical',  // 'vertical' | 'horizontal'
+    mode: 'wall',  // 'wall' | 'free'
     holes: [{ pct: 50, size: 80 }],  // pct = position along the wall (y% for vertical, x% for horizontal)
     turbines: [],  particles: [],
     searching: false,
@@ -98,9 +109,37 @@ function holePos() {
 }
 function dist(ax,ay,bx,by) { return Math.hypot(bx-ax,by-ay); }
 
+// Movement bounds for a turbine (respecting home + range)
+function turbBounds(turb) {
+    const base = globalBounds();
+    if (!turb || !turb.homeX) return base;
+    const r = CFG.MOVE_RANGE;
+    return {
+        x0: Math.max(base.x0, turb.homeX - r),
+        x1: Math.min(base.x1, turb.homeX + r),
+        y0: Math.max(base.y0, turb.homeY - r),
+        y1: Math.min(base.y1, turb.homeY + r),
+    };
+}
+
+// Check if point is within a turbine's movement range
+function inRange(turb, px, py) {
+    if (!turb || !turb.homeX) return true;
+    return dist(px, py, turb.homeX, turb.homeY) <= CFG.MOVE_RANGE;
+}
+
+// Global bounds (full zone where turbines can exist)
+function globalBounds() {
+    const t = S.tank, m = turbR() + 8;
+    if (S.mode === 'free') {
+        return { x0: t.x+m, x1: t.x+t.w-m, y0: t.y+m, y1: t.y+t.h-m };
+    }
+    return downwindBounds();
+}
+
 // Downwind region: the side of the wall where wind goes TO
 function downwindBounds() {
-    const t=S.tank, w=WIND_DIRS[S.windDir], wc=wallCoord(), m=CFG.TURBINE_R+8;
+    const t=S.tank, w=WIND_DIRS[S.windDir], wc=wallCoord(), m=turbR()+8;
     const wm = CFG.WALL_MARGIN; // min distance from wall
     if (isVert()) {
         if (w.dx > 0.01) return { x0: wc+wm, x1: t.x+t.w-m, y0:t.y+m, y1:t.y+t.h-m };
@@ -114,12 +153,17 @@ function downwindBounds() {
 }
 
 function isDownwind(px, py) {
-    const b = downwindBounds();
+    const b = globalBounds();
     return px >= b.x0 && px <= b.x1 && py >= b.y0 && py <= b.y1;
+}
+
+function isValidPos(turb, px, py) {
+    return isDownwind(px, py) && inRange(turb, px, py);
 }
 
 // ===================== WIND MODEL =====================
 function wallFactor(px, py) {
+    if (S.mode === 'free') return 1.0;
     const w = WIND_DIRS[S.windDir], wc = wallCoord();
 
     if (isVert()) {
@@ -173,9 +217,10 @@ function wakeDef(turb, px, py) {
     const ds = dx*w.dx + dy*w.dy;
     if (ds <= 5) return 0;
     const perp = Math.abs(-dx*w.dy + dy*w.dx);
-    const R = CFG.TURBINE_R + CFG.WAKE_K * ds;
+    const tr = turbR();
+    const R = tr + CFG.WAKE_K * ds;
     if (perp >= R) return 0;
-    const deficit = 2*CFG.WAKE_A / ((1 + CFG.WAKE_K*ds/CFG.TURBINE_R)**2);
+    const deficit = 2*CFG.WAKE_A / ((1 + CFG.WAKE_K*ds/tr)**2);
     const rr = perp/R;
     return deficit * Math.exp(-2*rr*rr);
 }
@@ -226,7 +271,7 @@ function activateNext(startIdx) {
 }
 
 function prepareScan(turb) {
-    const b = downwindBounds();
+    const b = turbBounds(turb);
     const nx = CFG.SCAN_GRID;
     const ny = Math.round(CFG.SCAN_GRID * ((b.y1-b.y0) / Math.max(1, b.x1-b.x0)));
     turb.scanPts = [];
@@ -234,11 +279,12 @@ function prepareScan(turb) {
     const clampedNx = Math.max(nx, 4);
     for (let ix = 0; ix < clampedNx; ix++) {
         for (let iy = 0; iy < clampedNy; iy++) {
-            turb.scanPts.push({
-                x: b.x0 + (b.x1-b.x0)*ix/(clampedNx-1),
-                y: b.y0 + (b.y1-b.y0)*iy/(clampedNy-1),
-                v: -1,
-            });
+            const px = b.x0 + (b.x1-b.x0)*ix/(clampedNx-1);
+            const py = b.y0 + (b.y1-b.y0)*iy/(clampedNy-1);
+            // Only include points within the circular range
+            if (inRange(turb, px, py)) {
+                turb.scanPts.push({ x: px, y: py, v: -1 });
+            }
         }
     }
     turb.bestScan = { x: turb.x, y: turb.y, v: -1 };
@@ -281,11 +327,11 @@ function updateSearch(dt) {
                     const ang = a/12*Math.PI*2;
                     const nx = turb.x + Math.cos(ang)*step;
                     const ny = turb.y + Math.sin(ang)*step;
-                    if (!isDownwind(nx, ny)) continue;
+                    if (!isValidPos(turb, nx, ny)) continue;
                     let ok = true;
                     for (let j=0; j<S.turbines.length; j++) {
                         if (j===i) continue;
-                        if (dist(nx,ny,S.turbines[j].x,S.turbines[j].y)<CFG.MIN_TURB_DIST) { ok=false; break; }
+                        if (dist(nx,ny,S.turbines[j].x,S.turbines[j].y)<minTurbDist()) { ok=false; break; }
                     }
                     if (!ok) continue;
                     const v = windAt(nx, ny, turb);
@@ -334,7 +380,7 @@ function updateSearch(dt) {
                 if (j === ti) continue;
                 const ot = S.turbines[j];
                 if (ot.phase === 'done' || ot.phase === 'refining') {
-                    if (dist(sp.x,sp.y,ot.x,ot.y) < CFG.MIN_TURB_DIST) { ok=false; break; }
+                    if (dist(sp.x,sp.y,ot.x,ot.y) < minTurbDist()) { ok=false; break; }
                 }
             }
             if (ok) {
@@ -389,11 +435,11 @@ function updateSearch(dt) {
                 const ang = a/12*Math.PI*2;
                 const nx = turb.x + Math.cos(ang)*step;
                 const ny = turb.y + Math.sin(ang)*step;
-                if (!isDownwind(nx, ny)) continue;
+                if (!isValidPos(turb, nx, ny)) continue;
                 let ok = true;
                 for (let j=0; j<S.turbines.length; j++) {
                     if (j===ti) continue;
-                    if (dist(nx,ny,S.turbines[j].x,S.turbines[j].y)<CFG.MIN_TURB_DIST) { ok=false; break; }
+                    if (dist(nx,ny,S.turbines[j].x,S.turbines[j].y)<minTurbDist()) { ok=false; break; }
                 }
                 if (!ok) continue;
                 const v = windAt(nx, ny, turb);
@@ -424,11 +470,11 @@ function continuousOptimize() {
             const ang = a/8*Math.PI*2;
             const nx = turb.x+Math.cos(ang)*step;
             const ny = turb.y+Math.sin(ang)*step;
-            if (!isDownwind(nx,ny)) continue;
+            if (!isValidPos(turb,nx,ny)) continue;
             let ok=true;
             for (let j=0;j<S.turbines.length;j++) {
                 if(j===i) continue;
-                if(dist(nx,ny,S.turbines[j].x,S.turbines[j].y)<CFG.MIN_TURB_DIST){ok=false;break;}
+                if(dist(nx,ny,S.turbines[j].x,S.turbines[j].y)<minTurbDist()){ok=false;break;}
             }
             if(!ok) continue;
             const v = windAt(nx,ny,turb);
@@ -497,19 +543,21 @@ function drawTank() {
         cx.beginPath(); cx.arc(rx,ry,r,0,Math.PI*2); cx.stroke();
     }
     cx.restore();
-    // Downwind zone subtle highlight
-    const b = downwindBounds();
-    cx.fillStyle = "rgba(10,50,80,0.15)";
-    cx.fillRect(b.x0, b.y0, b.x1-b.x0, b.y1-b.y0);
+    // Downwind zone subtle highlight (only in wall mode)
+    if (S.mode === 'wall') {
+        const b = downwindBounds();
+        cx.fillStyle = "rgba(10,50,80,0.15)";
+        cx.fillRect(b.x0, b.y0, b.x1-b.x0, b.y1-b.y0);
+        // Downwind label
+        cx.fillStyle="rgba(74,160,240,0.3)"; cx.font="10px Segoe UI";
+        cx.textAlign="center";
+        cx.fillText("Zona downwind (turbinas)", (b.x0+b.x1)/2, b.y1+12);
+        cx.textAlign="left";
+    }
     // Labels
     cx.strokeStyle="#2a4a6a"; cx.lineWidth=2; cx.strokeRect(t.x,t.y,t.w,t.h);
     cx.fillStyle="#2a4a6a"; cx.font="11px Segoe UI";
     cx.fillText("Tanque de agua", t.x+6, t.y+14);
-    // Downwind label
-    cx.fillStyle="rgba(74,160,240,0.3)"; cx.font="10px Segoe UI";
-    cx.textAlign="center";
-    cx.fillText("Zona downwind (turbinas)", (b.x0+b.x1)/2, b.y1+12);
-    cx.textAlign="left";
 }
 
 function drawWallSegment(x0,y0,x1,y1) {
@@ -629,7 +677,7 @@ function drawWake() {
     if (!S.showWake) return;
     const w=WIND_DIRS[S.windDir], px=-w.dy, py=w.dx;
     for (const turb of S.turbines) {
-        const cl=400, r0=CFG.TURBINE_R, r1=r0+CFG.WAKE_K*cl;
+        const cl=400, r0=turbR(), r1=r0+CFG.WAKE_K*cl;
         cx.beginPath();
         cx.moveTo(turb.x+px*r0, turb.y+py*r0);
         cx.lineTo(turb.x+w.dx*cl+px*r1, turb.y+w.dy*cl+py*r1);
@@ -702,9 +750,22 @@ function drawScanOverlay() {
 function drawTurbine(turb, idx) {
     const {x,y,bladeAngle}=turb;
     const col=CFG.COL_BLADE[idx%CFG.COL_BLADE.length];
+    const tr = turbR(), bl = bladeLen();
+    // Movement range circle
+    if (turb.homeX !== undefined) {
+        cx.save();
+        cx.beginPath(); cx.arc(turb.homeX, turb.homeY, CFG.MOVE_RANGE, 0, Math.PI*2);
+        cx.setLineDash([6,6]);
+        cx.strokeStyle = `rgba(${hexToRgb(col)},0.2)`;
+        cx.lineWidth = 1; cx.stroke();
+        cx.setLineDash([]);
+        // Home position small marker
+        cx.beginPath(); cx.arc(turb.homeX, turb.homeY, 3, 0, Math.PI*2);
+        cx.fillStyle = `rgba(${hexToRgb(col)},0.3)`; cx.fill();
+        cx.restore();
+    }
     // Trail
     if (turb.trail && turb.trail.length>1) {
-        // Calculate trail alpha with fade out
         let alpha = 0.3;
         if (turb.trailFadeStart > 0) {
             const elapsed = S.t - turb.trailFadeStart;
@@ -720,13 +781,13 @@ function drawTurbine(turb, idx) {
         }
     }
     // Platform
-    cx.beginPath();cx.arc(x,y,CFG.TURBINE_R+5,0,Math.PI*2);
+    cx.beginPath();cx.arc(x,y,tr+5,0,Math.PI*2);
     cx.fillStyle="rgba(30,50,80,0.45)";cx.fill();
     cx.strokeStyle="rgba(80,120,160,0.3)";cx.lineWidth=1;cx.stroke();
     // Search glow
     if (turb.phase==='moving'||turb.phase==='refining'||turb.phase==='scanning') {
         const gl=0.3+0.2*Math.sin(S.t*4);
-        cx.beginPath();cx.arc(x,y,CFG.TURBINE_R+10+Math.sin(S.t*3)*3,0,Math.PI*2);
+        cx.beginPath();cx.arc(x,y,tr+10+Math.sin(S.t*3)*3,0,Math.PI*2);
         cx.strokeStyle=`rgba(74,240,160,${gl})`;cx.lineWidth=2;cx.stroke();
     }
     // Moving: dashed line to target
@@ -735,23 +796,23 @@ function drawTurbine(turb, idx) {
         cx.beginPath(); cx.moveTo(x,y); cx.lineTo(turb.targetX, turb.targetY);
         cx.strokeStyle=col; cx.lineWidth=1.5; cx.stroke();
         cx.setLineDash([]); cx.restore();
-        // Target marker
         cx.beginPath(); cx.arc(turb.targetX, turb.targetY, 4+Math.sin(S.t*5)*2, 0, Math.PI*2);
         cx.strokeStyle=col; cx.lineWidth=1.5; cx.stroke();
     }
     // Hub
-    cx.beginPath();cx.arc(x,y,5,0,Math.PI*2);
+    const hubR = S.mode === 'free' ? 7 : 5;
+    cx.beginPath();cx.arc(x,y,hubR,0,Math.PI*2);
     cx.fillStyle="#c0c8d8";cx.fill();cx.strokeStyle="#8090a8";cx.lineWidth=1.5;cx.stroke();
     // Blades
     for (let i=0;i<3;i++) {
         const a=bladeAngle+i*Math.PI*2/3;
-        const bx=x+Math.cos(a)*CFG.BLADE_LEN, by=y+Math.sin(a)*CFG.BLADE_LEN;
+        const bx=x+Math.cos(a)*bl, by=y+Math.sin(a)*bl;
         cx.beginPath();cx.moveTo(x,y);cx.lineTo(bx,by);
-        cx.strokeStyle=col;cx.lineWidth=3;cx.lineCap="round";cx.stroke();
-        cx.beginPath();cx.arc(bx,by,2,0,Math.PI*2);cx.fillStyle=col;cx.fill();
+        cx.strokeStyle=col;cx.lineWidth= S.mode==='free'?4:3;cx.lineCap="round";cx.stroke();
+        cx.beginPath();cx.arc(bx,by, S.mode==='free'?3:2,0,Math.PI*2);cx.fillStyle=col;cx.fill();
     }
     // Voltage bar
-    const bw=36,bh=4,bx2=x-bw/2,by2=y+CFG.TURBINE_R+10;
+    const bw=36,bh=4,bx2=x-bw/2,by2=y+tr+10;
     cx.fillStyle="rgba(0,0,0,0.5)";cx.fillRect(bx2,by2,bw,bh);
     const vp=clamp(turb.voltage/100,0,1);
     cx.fillStyle=vp>0.5?"#4af06a":vp>0.2?"#f0da4a":"#f04a4a";
@@ -761,8 +822,16 @@ function drawTurbine(turb, idx) {
     cx.fillStyle="#b0c0d8";cx.font="10px Segoe UI";cx.textAlign="center";
     cx.fillText(`${turb.voltage.toFixed(1)}V`,x,by2+14);
     cx.fillStyle=col;cx.font="bold 9px Segoe UI";
-    cx.fillText(`T${idx+1}`,x,y-CFG.TURBINE_R-8);
+    cx.fillText(`T${idx+1}`,x,y-tr-8);
     cx.textAlign="left";
+}
+
+// Helper to convert hex color to rgb components
+function hexToRgb(hex) {
+    const r = parseInt(hex.slice(1,3),16);
+    const g = parseInt(hex.slice(3,5),16);
+    const b = parseInt(hex.slice(5,7),16);
+    return `${r},${g},${b}`;
 }
 
 function drawWindArrow() {
@@ -805,7 +874,7 @@ function render() {
     drawTank();
     drawWindField();
     drawWake();
-    drawWall();
+    if (S.mode === 'wall') drawWall();
     drawScanOverlay();
     drawParticles();
     for (let i=0;i<S.turbines.length;i++) drawTurbine(S.turbines[i],i);
@@ -826,11 +895,18 @@ function loop(now) {
 // ===================== UI =====================
 function setStatus(txt) { document.getElementById("info-status").textContent=txt; }
 
-function spawnTurbineInDownwind() {
-    const b = downwindBounds();
+function spawnTurbine() {
+    const b = globalBounds();
+    // Try to find a position that doesn't overlap existing turbines
+    let px, py, attempts = 0;
+    do {
+        px = b.x0 + Math.random()*(b.x1-b.x0);
+        py = b.y0 + Math.random()*(b.y1-b.y0);
+        attempts++;
+    } while (attempts < 50 && S.turbines.some(t => dist(px,py,t.x,t.y) < minTurbDist()));
     const turb = {
-        x: b.x0 + Math.random()*(b.x1-b.x0),
-        y: b.y0 + Math.random()*(b.y1-b.y0),
+        x: px, y: py,
+        homeX: px, homeY: py,  // Home position for range constraint
         bladeAngle: Math.random()*Math.PI*2,
         bladeSpeed:0, voltage:0,
         phase:null, trail:[], scanPts:null,
@@ -849,12 +925,16 @@ function setupUI() {
             document.querySelectorAll(".wind-btn").forEach(b=>b.classList.remove("active"));
             btn.classList.add("active");
             initParticles();
-            // Move turbines into new downwind zone
-            const b = downwindBounds();
-            for (const t of S.turbines) {
-                t.x = clamp(t.x, b.x0, b.x1);
-                t.y = clamp(t.y, b.y0, b.y1);
-                t.trail = [];
+            // Move turbines into new zone (only clamp in wall mode)
+            if (S.mode === 'wall') {
+                const b = globalBounds();
+                for (const t of S.turbines) {
+                    t.x = clamp(t.x, b.x0, b.x1);
+                    t.y = clamp(t.y, b.y0, b.y1);
+                    t.homeX = clamp(t.homeX, b.x0, b.x1);
+                    t.homeY = clamp(t.homeY, b.y0, b.y1);
+                    t.trail = [];
+                }
             }
             if (S.turbines.some(t=>t.phase==='done')) startSearch();
         });
@@ -869,15 +949,59 @@ function setupUI() {
         S.wallPct = parseInt(e.target.value);
         document.getElementById("wall-pos-val").textContent = S.wallPct;
         // Re-clamp turbines
-        const b = downwindBounds();
+        const b = globalBounds();
         for (const t of S.turbines) {
             t.x = clamp(t.x, b.x0, b.x1);
             t.y = clamp(t.y, b.y0, b.y1);
+            t.homeX = clamp(t.homeX, b.x0, b.x1);
+            t.homeY = clamp(t.homeY, b.y0, b.y1);
         }
         if (S.turbines.some(t=>t.phase==='done')) startSearch();
     });
 
-    document.getElementById("btn-add-turbine").addEventListener("click", spawnTurbineInDownwind);
+    // Mode toggle
+    document.getElementById("btn-mode-wall").addEventListener("click", () => {
+        S.mode = 'wall';
+        document.getElementById("btn-mode-wall").classList.add("active");
+        document.getElementById("btn-mode-free").classList.remove("active");
+        document.getElementById("wall-section").classList.remove("hidden-section");
+        // Reset turbines to downwind zone
+        S.searching = false;
+        const b = globalBounds();
+        for (const t of S.turbines) {
+            t.x = clamp(t.x, b.x0, b.x1);
+            t.y = clamp(t.y, b.y0, b.y1);
+            t.homeX = t.x; t.homeY = t.y;
+            t.phase = null; t.trail = [];
+        }
+        initParticles();
+        setStatus("Esperando");
+    });
+    document.getElementById("btn-mode-free").addEventListener("click", () => {
+        S.mode = 'free';
+        document.getElementById("btn-mode-free").classList.add("active");
+        document.getElementById("btn-mode-wall").classList.remove("active");
+        document.getElementById("wall-section").classList.add("hidden-section");
+        // Reset turbines for free mode
+        S.searching = false;
+        const b = globalBounds();
+        for (const t of S.turbines) {
+            t.x = clamp(t.x, b.x0, b.x1);
+            t.y = clamp(t.y, b.y0, b.y1);
+            t.homeX = t.x; t.homeY = t.y;
+            t.phase = null; t.trail = [];
+        }
+        initParticles();
+        setStatus("Modo libre");
+    });
+
+    // Movement range slider
+    document.getElementById("move-range").addEventListener("input", e => {
+        CFG.MOVE_RANGE = parseInt(e.target.value);
+        document.getElementById("move-range-val").textContent = CFG.MOVE_RANGE;
+    });
+
+    document.getElementById("btn-add-turbine").addEventListener("click", spawnTurbine);
     document.getElementById("btn-remove-turbine").addEventListener("click", () => {
         if (S.turbines.length) { S.turbines.pop(); updateTurbineList(); }
     });
@@ -888,11 +1012,12 @@ function setupUI() {
         document.getElementById("btn-wall-v").classList.add("active");
         document.getElementById("btn-wall-h").classList.remove("active");
         document.getElementById("wall-pos-label").textContent = "Posición X";
-        // Re-clamp turbines
-        const b = downwindBounds();
+        const b = globalBounds();
         for (const t of S.turbines) {
             t.x = clamp(t.x, b.x0, b.x1);
             t.y = clamp(t.y, b.y0, b.y1);
+            t.homeX = clamp(t.homeX, b.x0, b.x1);
+            t.homeY = clamp(t.homeY, b.y0, b.y1);
             t.trail = [];
         }
         initParticles();
@@ -903,10 +1028,12 @@ function setupUI() {
         document.getElementById("btn-wall-h").classList.add("active");
         document.getElementById("btn-wall-v").classList.remove("active");
         document.getElementById("wall-pos-label").textContent = "Posición Y";
-        const b = downwindBounds();
+        const b = globalBounds();
         for (const t of S.turbines) {
             t.x = clamp(t.x, b.x0, b.x1);
             t.y = clamp(t.y, b.y0, b.y1);
+            t.homeX = clamp(t.homeX, b.x0, b.x1);
+            t.homeY = clamp(t.homeY, b.y0, b.y1);
             t.trail = [];
         }
         initParticles();
@@ -950,10 +1077,9 @@ function setupUI() {
     document.getElementById("btn-start-search").addEventListener("click", startSearch);
     document.getElementById("btn-reset").addEventListener("click", () => {
         S.searching=false;
-        const b=downwindBounds();
         for (const t of S.turbines) {
-            t.x=b.x0+Math.random()*(b.x1-b.x0);
-            t.y=b.y0+Math.random()*(b.y1-b.y0);
+            // Return to home position
+            t.x = t.homeX; t.y = t.homeY;
             t.phase=null; t.trail=[];
         }
         setStatus("Esperando");
@@ -997,7 +1123,7 @@ function onDown(e) {
     }
     if (!S.searching) {
         for (let i=0;i<S.turbines.length;i++) {
-            if (dist(mx,my,S.turbines[i].x,S.turbines[i].y)<CFG.TURBINE_R+8) {
+            if (dist(mx,my,S.turbines[i].x,S.turbines[i].y)<turbR()+8) {
                 S.dragTurbine=i; cvs.style.cursor="grabbing"; return;
             }
         }
@@ -1015,11 +1141,15 @@ function onMove(e) {
         updateHoleList(); return;
     }
     if (S.dragTurbine!==null) {
-        const b=downwindBounds();
-        S.turbines[S.dragTurbine].x = clamp(mx, b.x0, b.x1);
-        S.turbines[S.dragTurbine].y = clamp(my, b.y0, b.y1);
-        S.turbines[S.dragTurbine].phase=null;
-        S.turbines[S.dragTurbine].trail=[];
+        const b=globalBounds();
+        const turb = S.turbines[S.dragTurbine];
+        turb.x = clamp(mx, b.x0, b.x1);
+        turb.y = clamp(my, b.y0, b.y1);
+        // Update home position when manually dragging
+        turb.homeX = turb.x;
+        turb.homeY = turb.y;
+        turb.phase=null;
+        turb.trail=[];
         return;
     }
     // Cursor
@@ -1027,7 +1157,7 @@ function onMove(e) {
     if (holeHitTest(mx,my)>=0) cur = isVert()?"ns-resize":"ew-resize";
     if (cur==="crosshair" && !S.searching) {
         for (const tb of S.turbines) {
-            if (dist(mx,my,tb.x,tb.y)<CFG.TURBINE_R+8) { cur="grab"; break; }
+            if (dist(mx,my,tb.x,tb.y)<turbR()+8) { cur="grab"; break; }
         }
     }
     cvs.style.cursor=cur;
@@ -1036,7 +1166,7 @@ function onMove(e) {
     let found=false;
     for (let i=0;i<S.turbines.length;i++) {
         const tb=S.turbines[i];
-        if (dist(mx,my,tb.x,tb.y)<CFG.TURBINE_R+8) {
+        if (dist(mx,my,tb.x,tb.y)<turbR()+8) {
             const ws=windAt(tb.x,tb.y);
             tip.classList.remove("hidden");
             tip.style.left=(mx+15)+"px"; tip.style.top=(my-30)+"px";
@@ -1079,7 +1209,7 @@ function init() {
     initParticles();
     updateHoleList();
     // Default: one turbine in downwind zone
-    spawnTurbineInDownwind();
+    spawnTurbine();
     requestAnimationFrame(loop);
 }
 init();

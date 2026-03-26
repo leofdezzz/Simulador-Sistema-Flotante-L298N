@@ -35,13 +35,25 @@
                 </section>
 
                 <section class="control-group">
-                    <h3>Aerogeneradores</h3>
-                    <button id="btn-add-turbine" class="action-btn">+ Agregar Aerogenerador</button>
-                    <button id="btn-remove-turbine" class="action-btn danger">− Quitar Último</button>
-                    <div id="turbine-list"></div>
+                    <h3>Modo</h3>
+                    <div class="mode-toggle">
+                        <button id="btn-mode-wall" class="mode-btn active" title="Modo con pared">🧱 Pared</button>
+                        <button id="btn-mode-free" class="mode-btn" title="Modo libre sin pared">🌊 Libre</button>
+                    </div>
                 </section>
 
                 <section class="control-group">
+                    <h3>Aerogeneradores</h3>
+                    <button id="btn-add-turbine" class="action-btn">+ Agregar Aerogenerador</button>
+                    <button id="btn-remove-turbine" class="action-btn danger">− Quitar Último</button>
+                    <div class="wall-controls">
+                        <label>Rango de movimiento: <span id="move-range-val">120</span>px</label>
+                        <input type="range" id="move-range" min="40" max="300" step="10" value="120">
+                    </div>
+                    <div id="turbine-list"></div>
+                </section>
+
+                <section class="control-group" id="wall-section">
                     <h3>Pared</h3>
                     <div class="wall-orient-toggle">
                         <button id="btn-wall-v" class="orient-btn active" title="Pared vertical">│ Vertical</button>
@@ -101,6 +113,6 @@
         </div>
     </div>
 
-    <script src="simulator.js?v=8"></script>
+    <script src="simulator.js?v=9"></script>
 </body>
 </html>
