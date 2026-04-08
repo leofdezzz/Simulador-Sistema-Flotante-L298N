@@ -2,9 +2,20 @@
 
 Simulador visual e interactivo de aerogeneradores flotantes en un tanque de agua con efecto estela (wake effect). Basado en el proyecto [Floating Farm](https://github.com/leofdezzz/Sistema-Flotante) que utiliza un Raspberry Pi Pico para controlar un aerogenerador flotante real.
 
-## Descripcion
+## Archivos
 
-El simulador permite visualizar y experimentar con la colocacion optima de multiples aerogeneradores flotantes dentro de un tanque de agua. Una pared con agujeros actua como barrera fisica, y las turbinas deben posicionarse en el lado sotavento (downwind) para capturar el viento que pasa a traves de los agujeros, evitando el efecto estela entre ellas.
+| Archivo | Descripcion |
+|---------|-------------|
+| `index.html` | Simulador principal con multiples aerogeneradores |
+| `wall-optimizer.html` | Optimizador de un solo aerogenerador en modo pared |
+| `simulator.js` | Logica del simulador principal |
+| `style.css` | Estilos compartidos |
+
+---
+
+## Simulador Principal (`index.html`)
+
+Permite visualizar y experimentar con la colocacion optima de multiples aerogeneradores flotantes dentro de un tanque de agua. Una pared con agujeros actua como barrera fisica, y las turbinas deben posicionarse en el lado sotavento (downwind) para capturar el viento que pasa a traves de los agujeros, evitando el efecto estela entre ellas.
 
 ### Caracteristicas
 
@@ -14,6 +25,33 @@ El simulador permite visualizar y experimentar con la colocacion optima de multi
 - **Efecto estela** basado en el modelo Jensen/Park
 - **Visualizacion** de campo de viento, particulas y conos de estela
 - **Coordinacion global** entre turbinas para maximizar la produccion total
+
+---
+
+## Optimizador de Pared (`wall-optimizer.html`)
+
+Simulador de un unico aerogenerador con una pared fija en uno de los cuatro lados del tanque. Disenado para encontrar automaticamente la posicion optima del aerogenerador segun la posicion del agujero y la direccion del viento.
+
+### Caracteristicas
+
+- **Un aerogenerador** arrastrable con el raton
+- **Pared en 4 posiciones** fijas: izquierda, derecha, arriba, abajo
+- **Agujero** ajustable en posicion y tamano
+- **4 diagonales de viento** seleccionables (la pared establece el cardinal correspondiente)
+- **Modo bucle**: busca la posicion optima continuamente; si se mueve el agujero o cambia el viento, espera ~1 segundo de estabilidad y busca de nuevo
+- **Panel de potencia** con voltaje y vatios en tiempo real
+- **Campo de viento** con mapa de calor y flechas
+- **Particulas** de flujo uniformes en todo el campo
+
+### Uso
+
+Abrir `wall-optimizer.html` directamente en el navegador (no requiere servidor).
+
+1. Seleccionar el lado donde va la pared (izquierda, derecha, arriba, abajo)
+2. Ajustar la posicion y tamano del agujero con los sliders
+3. Opcionalmente seleccionar una diagonal de viento compatible con el lado de pared elegido
+4. Pulsar **Buscar posicion optima** para entrar en modo bucle
+5. Mover el agujero — el aerogenerador se reposicionara automaticamente al dejar de mover
 
 ---
 
