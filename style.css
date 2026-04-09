@@ -700,15 +700,48 @@ label {
     padding: 10px 20px 12px;
     text-align: center;
     backdrop-filter: blur(8px);
-    pointer-events: none;
+    pointer-events: auto;
     animation: hud-in 0.4s cubic-bezier(0.34,1.56,0.64,1);
     min-width: 280px;
+    transition: opacity 0.4s, padding 0.4s, min-width 0.4s, border-radius 0.4s;
+    cursor: default;
 }
 @keyframes hud-in {
     from { opacity:0; transform: translateX(-50%) translateY(-20px) scale(0.9); }
     to   { opacity:1; transform: translateX(-50%) translateY(0) scale(1); }
 }
 .challenge-hud.hidden { display: none; }
+
+/* Estado colapsado: solo la pastilla del badge */
+.challenge-hud.collapsed {
+    opacity: 0.45;
+    padding: 5px 14px;
+    min-width: 0;
+    border-radius: 20px;
+}
+.challenge-hud.collapsed:hover {
+    opacity: 1;
+    padding: 10px 20px 12px;
+    min-width: 280px;
+    border-radius: 12px;
+}
+.challenge-hud.collapsed .hud-title,
+.challenge-hud.collapsed .hud-desc {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    margin: 0;
+    transition: max-height 0.35s, opacity 0.35s, margin 0.35s;
+}
+.challenge-hud.collapsed:hover .hud-title,
+.challenge-hud.collapsed:hover .hud-desc {
+    max-height: 80px;
+    opacity: 1;
+    margin-bottom: 2px;
+}
+.challenge-hud.collapsed .hud-badge {
+    margin-bottom: 0;
+}
 
 .hud-badge {
     display: inline-block;
@@ -721,17 +754,20 @@ label {
     border-radius: 20px;
     padding: 2px 10px;
     margin-bottom: 4px;
+    transition: margin 0.35s;
 }
 .hud-title {
     font-size: 1rem;
     font-weight: 700;
     color: #c0d8f8;
     margin-bottom: 2px;
+    transition: max-height 0.35s, opacity 0.35s, margin 0.35s;
 }
 .hud-desc {
     font-size: 0.72rem;
     color: #6a8aaa;
     max-width: 340px;
+    transition: max-height 0.35s, opacity 0.35s, margin 0.35s;
 }
 
 /* ── AI banner ───────────────────────────────────── */

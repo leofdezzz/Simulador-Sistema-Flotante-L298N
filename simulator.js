@@ -129,6 +129,59 @@ function isValidPos(turb, px, py) {
     return isDownwind(px, py) && inRange(turb, px, py);
 }
 
+// Encuentra la posición válida más cercana a (px, py) para la turbina turbIdx
+function findNearestValid(turbIdx, px, py) {
+    const turb = S.turbines[turbIdx];
+    const inChallenge = S.chal.phase === 'user_turn';
+    const b = globalBounds();
+
+    function isValid(x, y) {
+        if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) return false;
+        if (inChallenge && turb.homeX !== undefined) {
+            if (dist(x, y, turb.homeX, turb.homeY) > CFG.MOVE_RANGE) return false;
+        }
+        for (let j = 0; j < S.turbines.length; j++) {
+            if (j === turbIdx) continue;
+            if (violatesSpacing(S.turbines[j].x, S.turbines[j].y, x, y)) return false;
+        }
+        return true;
+    }
+
+    if (isValid(px, py)) return { x: px, y: py };
+
+    const ANGLES = 64;
+    const STEP = 5;
+    const MAX_R = 900;
+    for (let r = STEP; r <= MAX_R; r += STEP) {
+        for (let a = 0; a < ANGLES; a++) {
+            const ang = (a / ANGLES) * Math.PI * 2;
+            const tx = px + Math.cos(ang) * r;
+            const ty = py + Math.sin(ang) * r;
+            if (isValid(tx, ty)) return { x: tx, y: ty };
+        }
+    }
+
+    // Fallback: home position
+    if (inChallenge && turb.homeX !== undefined) return { x: turb.homeX, y: turb.homeY };
+    return { x: b.x0 + (b.x1 - b.x0) / 2, y: b.y0 + (b.y1 - b.y0) / 2 };
+}
+
+// Corrige todas las violaciones de spacing entre turbinas, iterando hasta resolverlas
+function resolveSpacingViolations() {
+    for (let pass = 0; pass < S.turbines.length * 2; pass++) {
+        let anyFixed = false;
+        for (let i = 0; i < S.turbines.length; i++) {
+            if (!spacingOk(i, S.turbines[i].x, S.turbines[i].y)) {
+                const nearest = findNearestValid(i, S.turbines[i].x, S.turbines[i].y);
+                S.turbines[i].x = nearest.x;
+                S.turbines[i].y = nearest.y;
+                anyFixed = true;
+            }
+        }
+        if (!anyFixed) break;
+    }
+}
+
 /**
  * Retorna true si colocar una turbina en (px,py) viola la distancia mínima
  * con una turbina existente en (ox,oy), usando restricción elíptica
@@ -434,8 +487,11 @@ function updateSearch(dt) {
 
         if (bestX !== turb.x || bestY !== turb.y) {
             const { tx, ty } = axisSnap(turb.x, turb.y, bestX, bestY);
-            if (tx !== turb.x || ty !== turb.y) {
-                turb.globalTarget = { x: tx, y: ty };
+            // Validar la posición tras axisSnap; si viola spacing, usar la posición sin snap
+            const fx = spacingOk(i, tx, ty) ? tx : bestX;
+            const fy = spacingOk(i, tx, ty) ? ty : bestY;
+            if (fx !== turb.x || fy !== turb.y) {
+                turb.globalTarget = { x: fx, y: fy };
                 S.globalRefineAnyMoved = true;
             }
         }
@@ -448,7 +504,8 @@ function updateSearch(dt) {
                 S.globalRefineIdx = 0;
                 S.globalRefineAnyMoved = false;
             } else {
-                // Cálculo terminado → lanzar animación final
+                // Cálculo terminado → corregir violaciones de spacing antes de animar
+                resolveSpacingViolations();
                 S.globalRefine = false;
                 S.finalAnimation = true;
                 for (const t of S.turbines) {
@@ -475,6 +532,7 @@ function updateSearch(dt) {
                 setStatus("Calculando óptimo global...");
             } else {
                 // Una sola turbina: animación final directa
+                resolveSpacingViolations();
                 S.finalAnimation = true;
                 const t = S.turbines[0];
                 t.finalX = t.x; t.finalY = t.y;
@@ -496,10 +554,7 @@ function updateSearch(dt) {
                 let ok = true;
                 for (let j = 0; j < S.turbines.length; j++) {
                     if (j === ti) continue;
-                    const ot = S.turbines[j];
-                    if (ot.phase === 'done' || ot.phase === 'refining') {
-                        if (violatesSpacing(ot.x, ot.y, sp.x, sp.y)) { ok=false; break; }
-                    }
+                    if (violatesSpacing(S.turbines[j].x, S.turbines[j].y, sp.x, sp.y)) { ok=false; break; }
                 }
                 if (ok) {
                     const sc = candidateScore(turb, sp.x, sp.y, turb.currentWind);
@@ -516,7 +571,10 @@ function updateSearch(dt) {
                 activateNext(ti+1);
             } else {
                 const { tx, ty } = axisSnap(turb.x, turb.y, turb.bestScan.x, turb.bestScan.y);
-                turb.targetX = tx; turb.targetY = ty;
+                // Validar la posición tras axisSnap; si viola spacing, usar la posición sin snap
+                const fx = spacingOk(ti, tx, ty) ? tx : turb.bestScan.x;
+                const fy = spacingOk(ti, tx, ty) ? ty : turb.bestScan.y;
+                turb.targetX = fx; turb.targetY = fy;
                 turb.phase = 'moving';
             }
         }
@@ -831,6 +889,18 @@ function drawTurbine(turb, idx) {
         cx.beginPath();cx.arc(x,y,tr+12,0,Math.PI*2);
         cx.strokeStyle="rgba(255,60,60,0.85)";cx.lineWidth=2;
         cx.setLineDash([4,4]);cx.stroke();cx.setLineDash([]);
+        cx.restore();
+    }
+    // Turbina en posición inválida (parpadeo rojo al intentar terminar)
+    if (turb._invalid) {
+        const blink = Math.abs(Math.sin(S.t * 8));
+        cx.save();
+        cx.globalAlpha = 0.3 + 0.7 * blink;
+        cx.beginPath(); cx.arc(x, y, tr + 14, 0, Math.PI * 2);
+        cx.fillStyle = "rgba(255,40,40,0.25)"; cx.fill();
+        cx.beginPath(); cx.arc(x, y, tr + 14, 0, Math.PI * 2);
+        cx.strokeStyle = `rgba(255,60,60,${0.6 + 0.4 * blink})`;
+        cx.lineWidth = 3; cx.stroke();
         cx.restore();
     }
     // Moving: dashed line to target
@@ -1152,11 +1222,40 @@ function loadChallenge(idx) {
     document.getElementById("live-baseline").textContent = S.chal.baselineEff.toFixed(1) + "%";
     updateTurbineList();
     setStatus("Desafío: turno del jugador");
+
+    // Colapsar el HUD después de 3 s para no molestar
+    const hud = document.getElementById("challenge-hud");
+    hud.classList.remove("collapsed");
+    clearTimeout(S._hudCollapseTimer);
+    S._hudCollapseTimer = setTimeout(() => hud.classList.add("collapsed"), 3000);
 }
 
 /** El jugador pulsa "¡He terminado!" */
 function submitChallenge() {
     if (S.chal.phase !== 'user_turn') return;
+
+    // Validar que ninguna turbina esté en posición inválida (zona roja)
+    let anyInvalid = false;
+    for (let i = 0; i < S.turbines.length; i++) {
+        const invalid = !spacingOk(i, S.turbines[i].x, S.turbines[i].y);
+        S.turbines[i]._invalid = invalid;
+        if (invalid) anyInvalid = true;
+    }
+    if (anyInvalid) {
+        const hud = document.getElementById("challenge-hud");
+        hud.classList.remove("collapsed");
+        document.getElementById("hud-desc").textContent =
+            "¡Hay turbinas en zona prohibida! Muévelas antes de terminar.";
+        clearTimeout(S._invalidWarningTimer);
+        S._invalidWarningTimer = setTimeout(() => {
+            if (S.chal.phase === 'user_turn') {
+                document.getElementById("hud-desc").textContent =
+                    `Rango: ±${CHALLENGE_MOVE_RANGE}px por turbina (igual que la IA). Muévelas para mejorar la eficiencia.`;
+                hud.classList.add("collapsed");
+            }
+        }, 3000);
+        return;
+    }
 
     // Guardar métricas del jugador
     S.chal.userPower = 0;
@@ -1171,6 +1270,7 @@ function submitChallenge() {
         S.turbines[i].x = ip.x; S.turbines[i].y = ip.y;
         S.turbines[i].homeX = ip.x; S.turbines[i].homeY = ip.y;
         S.turbines[i].phase = null; S.turbines[i].trail = [];
+        S.turbines[i]._invalid = false;
     }
 
     S.chal.phase = 'ai_running';
@@ -1347,8 +1447,17 @@ function onMove(e) {
         // Fuera de desafío: usar globalBounds y actualizar home
         const inChallenge = S.chal.phase === 'user_turn';
         const b = inChallenge ? turbBounds(turb) : globalBounds();
-        const cx2 = clamp(mx, b.x0, b.x1);
-        const cy2 = clamp(my, b.y0, b.y1);
+        let cx2 = clamp(mx, b.x0, b.x1);
+        let cy2 = clamp(my, b.y0, b.y1);
+        // Restringir al círculo (no al cuadrado) cuando hay rango de movimiento
+        if (inChallenge && turb.homeX !== undefined) {
+            const d = dist(cx2, cy2, turb.homeX, turb.homeY);
+            if (d > CFG.MOVE_RANGE) {
+                const ang = Math.atan2(cy2 - turb.homeY, cx2 - turb.homeX);
+                cx2 = turb.homeX + Math.cos(ang) * CFG.MOVE_RANGE;
+                cy2 = turb.homeY + Math.sin(ang) * CFG.MOVE_RANGE;
+            }
+        }
         let blocked = false;
         for (let j=0; j<S.turbines.length; j++) {
             if (j===S.dragTurbine) continue;
@@ -1356,11 +1465,13 @@ function onMove(e) {
                 blocked=true; break;
             }
         }
+        // Siempre mover la turbina al cursor (dentro de límites/círculo)
+        turb.x = cx2; turb.y = cy2;
+        turb.phase=null; turb.trail=[];
         if (!blocked) {
-            turb.x = cx2; turb.y = cy2;
             if (!inChallenge) { turb.homeX = cx2; turb.homeY = cy2; }
-            turb.phase=null; turb.trail=[];
             turb._dragBlocked = false;
+            turb._invalid = false;
         } else {
             turb._dragBlocked = true;
         }
@@ -1392,7 +1503,18 @@ function onMove(e) {
 
 function onUp() {
     if (S.dragTurbine!==null) {
-        if (S.turbines[S.dragTurbine]) S.turbines[S.dragTurbine]._dragBlocked=false;
+        const turb = S.turbines[S.dragTurbine];
+        if (turb) {
+            if (turb._dragBlocked) {
+                // Mover al punto válido más cercano con mínimo desplazamiento
+                const nearest = findNearestValid(S.dragTurbine, turb.x, turb.y);
+                turb.x = nearest.x;
+                turb.y = nearest.y;
+                const inChallenge = S.chal.phase === 'user_turn';
+                if (!inChallenge) { turb.homeX = nearest.x; turb.homeY = nearest.y; }
+            }
+            turb._dragBlocked = false;
+        }
         S.dragTurbine=null; cvs.style.cursor="crosshair";
     }
 }
