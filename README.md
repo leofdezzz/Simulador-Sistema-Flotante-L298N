@@ -218,16 +218,54 @@ Parametros principales en `CFG`:
 
 ---
 
-## Uso
+## Iniciar el simulador (servidor local)
 
-1. Servir los archivos con cualquier servidor HTTP:
-   ```bash
-   python -m http.server 3000
-   ```
-2. Abrir `http://localhost:3000` en el navegador
-3. Agregar aerogeneradores y agujeros en la pared
-4. Pulsar **Iniciar Busqueda** para que las turbinas encuentren su posicion optima
-5. Cambiar la direccion y velocidad del viento en tiempo real
+El simulador **no puede abrirse directamente con `file://`**. Necesita un servidor HTTP en `localhost` porque:
+- `simulator.js` se carga como modulo ES (`<script type="module">`) y los modulos requieren origen `http(s)`.
+- La Web Serial API (puente con el prototipo ESP32) tambien exige `localhost` o HTTPS y solo funciona en Chrome o Edge.
+
+Cualquiera de estos comandos sirve la raiz del repo:
+
+```bash
+# Opcion A — Python (no instala nada en el proyecto)
+python -m http.server 3000
+
+# Opcion B — npm script equivalente (alias de la anterior)
+npm run serve
+
+# Opcion C — Node sin Python
+npx http-server -p 3000 .
+```
+
+Despues abre **http://localhost:3000** en Chrome o Edge.
+
+> Para detener el servidor: `Ctrl+C` en la terminal donde corre.
+
+### Tests
+
+```bash
+npm test
+```
+
+Ejecuta la suite `node --test` (geometria diagonal, protocolo serial contra un mock del ESP32, checks estaticos del firmware y del wiring del simulador). No requiere navegador ni hardware. Los pasos que dependen de PlatformIO se saltan automaticamente si `pio` no esta en el `PATH`.
+
+### Firmware ESP32
+
+```bash
+npm run firmware:build     # compila
+npm run firmware:upload    # flashea por USB
+npm run firmware:monitor   # consola serie 115200
+```
+
+Requiere [PlatformIO](https://platformio.org/) instalado. Detalles de hardware y conexionado en [`docs/HARDWARE.md`](docs/HARDWARE.md).
+
+## Flujo de uso
+
+1. Abre `http://localhost:3000` (ver arriba).
+2. Agrega aerogeneradores arrastrando con el raton.
+3. (Opcional) En **🔌 Prototipo Fisico**: conecta el ESP32 por USB y elige que turbina debe imitar el motor.
+4. Pulsa **▶ Iniciar Busqueda** para que las turbinas se reposicionen sobre su eje diagonal.
+5. Cambia la direccion y velocidad del viento en tiempo real. El motor del prototipo sigue a la turbina vinculada.
 
 ---
 
