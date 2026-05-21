@@ -334,6 +334,8 @@ function updatePowerPanel() {
     const avg = total / S.turbines.length;
     document.getElementById('power-total').textContent = formatPower(total);
     document.getElementById('power-per-turbine').textContent = `${formatPower(avg)} / turbina`;
+    const tsP = document.getElementById('ts-power');
+    if (tsP) tsP.textContent = formatPower(total);
     // Barra de progreso: max teórico = n turbinas × 15 MW
     const maxTotal = S.turbines.length * 15e6;
     const pct = Math.min(100, (total / maxTotal) * 100);
@@ -1017,6 +1019,16 @@ function update(dt) {
     updateParticles(dt);
     updateSearch(dt);
     continuousOptimize();
+    // Topbar clock (~1 Hz)
+    const nowSec = Math.floor(Date.now() / 1000);
+    if ((S._lastClockSec||0) !== nowSec) {
+        S._lastClockSec = nowSec;
+        const d = new Date();
+        const clk = document.getElementById('ts-clock');
+        if (clk) clk.textContent = d.toLocaleTimeString('es', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        const tsTurb = document.getElementById('ts-turbines');
+        if (tsTurb) tsTurb.textContent = S.turbines.length;
+    }
     for (const t of S.turbines) {
         const ws = windAtRotor(t.x,t.y,t);
         t.voltage = windToVoltage(ws);
@@ -1127,6 +1139,8 @@ function streamBoundTurbinePosition() {
     S.serial.lastSentMotor = motor;
     S.serial.lastSendT     = now;
     serialWrite(FFCore.formatMove(motor));
+    const mpos = document.getElementById('motor-pos-indicator');
+    if (mpos) mpos.style.left = (motor / 10).toFixed(1) + '%';
 }
 
 function refreshSerialUI() {
@@ -1527,6 +1541,8 @@ function setupUI() {
             S.windDir = parseInt(btn.dataset.dir);
             document.querySelectorAll(".wind-btn").forEach(b=>b.classList.remove("active"));
             btn.classList.add("active");
+            const tsDir = document.getElementById("ts-wind-dir");
+            if (tsDir) tsDir.textContent = btn.textContent.trim();
             initParticles();
             if (S.turbines.some(t=>t.phase==='done')) startSearch();
         });
@@ -1535,6 +1551,8 @@ function setupUI() {
     document.getElementById("wind-speed").addEventListener("input", e => {
         S.windSpeed = parseFloat(e.target.value);
         document.getElementById("wind-speed-val").textContent = S.windSpeed.toFixed(1);
+        const tsWS = document.getElementById("ts-wind-speed");
+        if (tsWS) tsWS.textContent = S.windSpeed.toFixed(1);
     });
 
     // Movement range slider
@@ -1587,7 +1605,11 @@ function setupUI() {
     // ── Eje diagonal (NE-SW / NW-SE) ──
     const axisBtn = document.getElementById("btn-toggle-axis");
     if (axisBtn) {
-        const updateAxisLabel = () => { axisBtn.textContent = "Eje: " + S.diagAxis; };
+        const updateAxisLabel = () => {
+            axisBtn.textContent = "⟋ Eje: " + S.diagAxis;
+            const fa = document.getElementById('foot-axis');
+            if (fa) fa.textContent = "Eje " + S.diagAxis;
+        };
         updateAxisLabel();
         axisBtn.addEventListener("click", () => {
             S.diagAxis = (S.diagAxis === FFCore.AXIS_NE_SW)

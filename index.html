@@ -3,95 +3,170 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Floating Farm Simulator</title>
+    <title>Eolic Sea Park — Control de Operaciones</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div id="app">
+
+        <!-- ── Topbar ──────────────────────────────────── -->
         <header>
-            <h1>🌊 Floating Farm Simulator</h1>
-            <p class="subtitle">Simulador de aerogeneradores flotantes con efecto estela</p>
+            <div class="brand">
+                <div class="brand-mark"><span></span></div>
+                <div class="brand-info">
+                    <div class="brand-name">Eolic Sea Park</div>
+                    <div class="brand-sub">Control de Operaciones</div>
+                </div>
+            </div>
+            <div class="topbar-stats">
+                <div class="ts-cell">
+                    <div class="ts-lbl">Viento</div>
+                    <div class="ts-val"><span id="ts-wind-speed">5.0</span><span class="unit">m/s</span></div>
+                </div>
+                <div class="ts-cell">
+                    <div class="ts-lbl">Dirección</div>
+                    <div class="ts-val"><span id="ts-wind-dir">←</span></div>
+                </div>
+                <div class="ts-cell">
+                    <div class="ts-lbl">Potencia</div>
+                    <div class="ts-val" id="ts-power">—</div>
+                </div>
+                <div class="ts-cell">
+                    <div class="ts-lbl">Turbinas</div>
+                    <div class="ts-val"><span id="ts-turbines">0</span></div>
+                </div>
+            </div>
+            <div class="topbar-right">
+                <div class="live-dot"></div>
+                <span id="ts-clock">—</span>
+            </div>
         </header>
 
         <div id="main-layout">
+
+            <!-- ── Side panels ─────────────────────────── -->
             <aside id="controls">
+
+                <!-- §01 Viento -->
                 <section class="control-group">
-                    <h3>Dirección del Viento</h3>
+                    <div class="panel-idx">§ 01</div>
+                    <h3>Viento</h3>
                     <div id="wind-compass">
                         <button class="wind-btn" data-dir="6" title="↖ Izq-Arriba">↖</button>
                         <button class="wind-btn" data-dir="2" title="↑ Arriba">↑</button>
                         <button class="wind-btn" data-dir="4" title="↗ Der-Arriba">↗</button>
                         <button class="wind-btn" data-dir="0" title="← Izquierda">←</button>
-                        <div class="compass-center" id="compass-indicator">●</div>
+                        <div class="compass-center" id="compass-indicator">·</div>
                         <button class="wind-btn" data-dir="1" title="→ Derecha">→</button>
                         <button class="wind-btn" data-dir="5" title="↙ Izq-Abajo">↙</button>
                         <button class="wind-btn" data-dir="3" title="↓ Abajo">↓</button>
                         <button class="wind-btn" data-dir="7" title="↘ Der-Abajo">↘</button>
                     </div>
                     <div class="wind-speed-control">
-                        <label>Velocidad: <span id="wind-speed-val">5.0</span> m/s</label>
+                        <div class="speed-row">
+                            <span class="lbl">Velocidad</span>
+                            <span class="val"><span id="wind-speed-val">5.0</span><span class="u">m/s</span></span>
+                        </div>
+                        <label>Velocidad: <span>5.0</span> m/s</label>
                         <input type="range" id="wind-speed" min="1" max="15" step="0.5" value="5">
+                        <div class="scale-marks"><span>1</span><span>8</span><span>15</span></div>
                     </div>
                 </section>
 
-                <section class="power-panel">
-                    <div class="power-label">Potencia del Parque</div>
-                    <div id="power-total" class="power-value">— W</div>
-                    <div class="power-bar-track">
-                        <div id="power-bar-fill" class="power-bar-fill"></div>
-                    </div>
-                    <div id="power-per-turbine" class="power-sub"></div>
-                </section>
-
+                <!-- §02 Flota -->
                 <section class="control-group">
-                    <h3>Aerogeneradores</h3>
-                    <button id="btn-add-turbine" class="action-btn">+ Agregar Aerogenerador</button>
-                    <button id="btn-remove-turbine" class="action-btn danger">− Quitar Último</button>
+                    <div class="panel-idx">§ 02</div>
+                    <h3>Flota</h3>
+                    <div class="btn-row">
+                        <button id="btn-add-turbine" class="action-btn">+ Agregar</button>
+                        <button id="btn-remove-turbine" class="action-btn danger">− Quitar</button>
+                    </div>
                     <div class="wall-controls">
-                        <label>Rango de movimiento: <span id="move-range-val">120</span>px</label>
+                        <div class="speed-row" style="margin-top:10px;margin-bottom:4px">
+                            <span class="lbl">Rango</span>
+                            <span class="val" style="font-size:16px"><span id="move-range-val">120</span><span class="u">px</span></span>
+                        </div>
                         <input type="range" id="move-range" min="40" max="300" step="10" value="120">
                     </div>
-                    <button id="btn-toggle-axis" class="action-btn axis-btn" title="Cambia el eje diagonal en el que se mueven todas las turbinas">Eje: NE-SW</button>
+                    <button id="btn-toggle-axis" class="action-btn axis-btn" title="Cambia el eje diagonal en el que se mueven las turbinas">⟋ Eje: NE–SW</button>
                     <div id="turbine-list"></div>
                 </section>
 
+                <!-- §03 Prototipo Físico -->
                 <section class="control-group serial-section">
-                    <h3>🔌 Prototipo Físico</h3>
-                    <p class="serial-hint">Conecta el ESP32 por USB. Selecciona qué turbina del simulador imita el prototipo. Al iniciar búsqueda, el motor seguirá su posición.</p>
+                    <div class="panel-idx">§ 03</div>
+                    <h3>Prototipo Físico</h3>
+                    <p class="serial-hint">Conecta el ESP32 por USB. Selecciona qué turbina imita el prototipo. Al iniciar búsqueda, el motor sigue su posición.</p>
                     <div class="serial-buttons">
-                        <button id="btn-serial-connect" class="action-btn primary">Conectar prototipo</button>
+                        <button id="btn-serial-connect" class="action-btn primary">Conectar</button>
                         <button id="btn-serial-disconnect" class="action-btn" disabled>Desconectar</button>
                         <button id="btn-serial-home" class="action-btn" disabled>Home</button>
                     </div>
-                    <label class="serial-bind">
-                        <span>Turbina vinculada:</span>
+                    <div class="serial-bind-row">
+                        <span class="lbl">Turbina</span>
                         <select id="serial-bind-select">
                             <option value="-1">— ninguna —</option>
                         </select>
-                    </label>
-                    <div class="serial-status">
+                    </div>
+                    <div class="serial-status-row">
+                        <div class="sdot"></div>
                         <span class="serial-status-lbl">Estado:</span>
                         <span id="serial-status">Sin conectar</span>
                     </div>
+                    <div class="motor-track">
+                        <div class="scale"></div>
+                        <div class="motor-pos" id="motor-pos-indicator"></div>
+                    </div>
+                    <div class="motor-readout"><span>0</span><span>500</span><span>1000</span></div>
                 </section>
 
+                <!-- §04 Simulación -->
                 <section class="control-group">
+                    <div class="panel-idx">§ 04</div>
                     <h3>Simulación</h3>
-                    <button id="btn-start-search" class="action-btn primary">▶ Iniciar Búsqueda</button>
-                    <button id="btn-reset" class="action-btn">↺ Resetear Posiciones</button>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="chk-show-wake" checked> Mostrar estela
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="chk-show-wind" checked> Mostrar partículas
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="chk-show-field" > Mostrar campo de viento
-                    </label>
+                    <div class="btn-row">
+                        <button id="btn-start-search" class="action-btn primary">▶ Buscar</button>
+                        <button id="btn-reset" class="action-btn">↺ Reset</button>
+                    </div>
+                    <div class="toggle-list" style="margin-top:14px">
+                        <label class="toggle-row" id="tr-wake">
+                            <span>Estela</span>
+                            <div class="toggle-switch"></div>
+                            <input type="checkbox" id="chk-show-wake" checked style="display:none">
+                        </label>
+                        <label class="toggle-row" id="tr-wind">
+                            <span>Partículas de viento</span>
+                            <div class="toggle-switch"></div>
+                            <input type="checkbox" id="chk-show-wind" checked style="display:none">
+                        </label>
+                        <label class="toggle-row" id="tr-field">
+                            <span>Campo de viento</span>
+                            <div class="toggle-switch"></div>
+                            <input type="checkbox" id="chk-show-field" style="display:none">
+                        </label>
+                    </div>
+                    <div style="margin-top:16px">
+                        <div class="panel-idx" style="margin-bottom:6px">Info</div>
+                        <div id="info-panel">
+                            <div class="info-row">
+                                <span>Turbinas</span>
+                                <span id="info-turbines">0</span>
+                            </div>
+                            <div class="info-row">
+                                <span>Estado</span>
+                                <span id="info-status">Esperando</span>
+                            </div>
+                        </div>
+                    </div>
                 </section>
 
+                <!-- §05 Modo Desafío -->
                 <section class="control-group challenge-section" id="challenge-section">
-                    <h3>🎮 Modo Desafío</h3>
+                    <div class="panel-idx">§ 05</div>
+                    <h3>Modo Desafío</h3>
                     <p class="challenge-hint" id="challenge-hint">El sistema te presenta un escenario con turbinas mal posicionadas. Muévelas tú primero, luego la IA muestra su solución óptima.</p>
                     <button id="btn-challenge" class="action-btn challenge-btn">⚡ Elegir Desafío</button>
                     <button id="btn-submit-challenge" class="action-btn submit-chal-btn hidden">✓ ¡He terminado!</button>
@@ -107,52 +182,68 @@
                     </div>
                 </section>
 
-                <section class="control-group">
-                    <h3>Información</h3>
-                    <div id="info-panel">
-                        <div class="info-row">
-                            <span>Turbinas:</span>
-                            <span id="info-turbines">0</span>
-                        </div>
-                        <div class="info-row">
-                            <span>Estado:</span>
-                            <span id="info-status">Esperando</span>
-                        </div>
-                    </div>
-                </section>
             </aside>
 
+            <!-- ── Stage / Canvas ──────────────────────── -->
             <main id="canvas-container">
                 <canvas id="sim-canvas"></canvas>
                 <div id="canvas-tooltip" class="tooltip hidden"></div>
 
-                <!-- HUD en canvas durante desafío -->
+                <!-- Power overlay (top-right) -->
+                <div class="park-card" id="park-card" style="
+                    position:absolute; top:18px; right:18px; width:220px;
+                    background:oklch(15% 0.022 222 / 0.78);
+                    backdrop-filter:blur(12px);
+                    border:1px solid var(--line); border-radius:var(--r-lg);
+                    padding:14px 16px; z-index:5;
+                ">
+                    <div style="font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-fade);margin-bottom:4px">Potencia del Parque</div>
+                    <div id="power-total" class="power-value" style="font-size:34px;margin-bottom:6px">— W</div>
+                    <div class="power-bar-track">
+                        <div id="power-bar-fill" class="power-bar-fill"></div>
+                    </div>
+                    <div id="power-per-turbine" class="power-sub"></div>
+                </div>
+
+                <!-- Challenge HUD -->
                 <div id="challenge-hud" class="challenge-hud hidden">
                     <div class="hud-badge" id="hud-badge">⚡ DESAFÍO</div>
                     <div class="hud-title" id="hud-title">—</div>
                     <div class="hud-desc" id="hud-desc">—</div>
                 </div>
 
-                <!-- Banner "IA calculando" -->
+                <!-- AI banner -->
                 <div id="ai-banner" class="ai-banner hidden">
-                    <span class="ai-banner-icon">🤖</span>
+                    <span class="ai-banner-icon">⚙</span>
                     <span id="ai-banner-txt">Calculando posición óptima…</span>
                 </div>
             </main>
         </div>
+
+        <!-- ── Footer ─────────────────────────────────── -->
+        <footer>
+            <div class="foot-l">
+                <span>Jensen / Park Wake Model</span>
+                <span id="foot-axis">Eje NE–SW</span>
+            </div>
+            <div class="foot-r">
+                <span id="foot-status">Esperando</span>
+                <span>v0.2</span>
+            </div>
+        </footer>
     </div>
 
-    <!-- ── Selector de Desafío ───────────────────────────────── -->
+    <!-- ── Selector de Desafío ─────────────────────── -->
     <div id="chal-selector" class="chal-modal hidden">
         <div class="chal-selector-card">
-            <div class="chal-sel-title">🎮 Elige tu Desafío</div>
+            <div class="chal-sel-title">Elige tu Desafío</div>
             <div class="chal-sel-sub">Cada reto empieza con turbinas mal posicionadas. Corrígelo tú y luego verás cómo lo hace la IA.</div>
             <div id="chal-list" class="chal-list"></div>
             <button id="btn-chal-cancel" class="challenge-close-btn" style="margin-top:14px">Cancelar</button>
         </div>
     </div>
 
-    <!-- ── Resultados del Desafío ────────────────────────────── -->
+    <!-- ── Resultados del Desafío ──────────────────── -->
     <div id="challenge-overlay" class="challenge-overlay hidden">
         <div class="challenge-card">
             <div class="challenge-trophy" id="result-trophy">🏆</div>
@@ -176,7 +267,7 @@
                     <div class="r3-delta" id="delta-player">—</div>
                 </div>
                 <div class="r3-block r3-ai">
-                    <div class="r3-label">🤖 IA</div>
+                    <div class="r3-label">⚙ IA</div>
                     <div class="r3-bar-wrap">
                         <div class="r3-bar-track"><div id="bar-ai" class="r3-bar bar-ai"></div></div>
                     </div>
@@ -188,16 +279,16 @@
             <div class="challenge-delta">
                 <div class="delta-label" id="delta-label">La IA te supera en eficiencia por</div>
                 <div id="improvement-val" class="improvement-value">+0 pp</div>
-                <div style="font-size:0.65rem;color:#3a6a5a;margin-top:4px">pts = eficiencia% − penalización por movimiento (máx −25 pts)</div>
+                <div style="font-size:0.65rem;color:var(--ink-fade);margin-top:4px">pts = eficiencia% − penalización por movimiento (máx −25 pts)</div>
             </div>
 
             <div id="challenge-grade" class="challenge-grade"></div>
             <div id="grade-message" class="grade-message"></div>
 
-            <button id="btn-close-challenge" class="challenge-close-btn">✕ Cerrar</button>
+            <button id="btn-close-challenge" class="challenge-close-btn">Cerrar</button>
         </div>
     </div>
 
-    <script type="module" src="simulator.js?v=14"></script>
+    <script type="module" src="simulator.js?v=15"></script>
 </body>
 </html>
