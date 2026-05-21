@@ -4,6 +4,7 @@
 // Wall is a physical barrier — turbines live on the downwind
 // side and must find holes to capture wind.
 // ============================================================
+import * as FFCore from './src/core.mjs';
 (() => {
 "use strict";
 
@@ -66,6 +67,16 @@ const S = {
     t: 0,
     tank: {x:0,y:0,w:0,h:0},
     dragTurbine: null,
+    diagAxis: FFCore.AXIS_NE_SW,  // eje diagonal en que se mueven todas las turbinas
+    serial: {
+        port: null, writer: null, reader: null,
+        connected: false,
+        boundTurbIdx: -1,
+        lastSentMotor: null,
+        lastSendT: 0,
+        lastStatus: 'Sin conectar',
+        incoming: FFCore.makeLineBuffer(),
+    },
     chal: {
         phase: 'idle',
         scenario: null,
@@ -111,6 +122,41 @@ function turbBounds(turb) {
 function inRange(turb, px, py) {
     if (!turb || !turb.homeX) return true;
     return dist(px, py, turb.homeX, turb.homeY) <= CFG.MOVE_RANGE;
+}
+
+// ── Diagonal axis helpers ──
+function currentAxisVec() { return FFCore.axisVec(S.diagAxis); }
+
+// Scalar t = projection of (turb.x, turb.y) onto axis through home.
+function turbT(turb) {
+    if (turb.homeX === undefined) return 0;
+    const a = currentAxisVec();
+    return (turb.x - turb.homeX) * a.dx + (turb.y - turb.homeY) * a.dy;
+}
+
+// Maximum t (in both directions) such that the resulting point stays
+// inside globalBounds AND within MOVE_RANGE of home.
+function effectiveAxisRange(turb) {
+    const a = currentAxisVec();
+    const b = globalBounds();
+    const hx = turb.homeX, hy = turb.homeY;
+    // For each side, solve homeX + t*ax in [b.x0, b.x1] etc. → t bounds
+    function clipDir(sign) {
+        const dx = sign * a.dx, dy = sign * a.dy;
+        let tMax = CFG.MOVE_RANGE;
+        if (dx > 0) tMax = Math.min(tMax, (b.x1 - hx) / dx);
+        if (dx < 0) tMax = Math.min(tMax, (b.x0 - hx) / dx);
+        if (dy > 0) tMax = Math.min(tMax, (b.y1 - hy) / dy);
+        if (dy < 0) tMax = Math.min(tMax, (b.y0 - hy) / dy);
+        return Math.max(0, tMax);
+    }
+    return { tPos: clipDir(+1), tNeg: clipDir(-1) };
+}
+
+// Map (any) (x,y) onto the turbine's diagonal line through home, clamped to MOVE_RANGE.
+function projectTurb(turb, x, y) {
+    if (turb.homeX === undefined) return { x, y, t: 0 };
+    return FFCore.projectToAxis(turb.homeX, turb.homeY, x, y, S.diagAxis, CFG.MOVE_RANGE);
 }
 
 // Global bounds: todo el tanque
@@ -394,20 +440,19 @@ function activateNext(startIdx) {
 }
 
 function prepareScan(turb) {
-    const b = turbBounds(turb);
-    const nx = CFG.SCAN_GRID;
-    const ny = Math.round(CFG.SCAN_GRID * ((b.y1-b.y0) / Math.max(1, b.x1-b.x0)));
+    // Diagonal-axis scan: sample N points along the diagonal line through
+    // (homeX, homeY), clipped to MOVE_RANGE and tank bounds.
+    const a = currentAxisVec();
+    const r = effectiveAxisRange(turb);
+    const N = 40;
     turb.scanPts = [];
-    const clampedNy = Math.max(ny, 4);
-    const clampedNx = Math.max(nx, 4);
-    for (let ix = 0; ix < clampedNx; ix++) {
-        for (let iy = 0; iy < clampedNy; iy++) {
-            const px = b.x0 + (b.x1-b.x0)*ix/(clampedNx-1);
-            const py = b.y0 + (b.y1-b.y0)*iy/(clampedNy-1);
-            if (inRange(turb, px, py)) {
-                turb.scanPts.push({ x: px, y: py });
-            }
-        }
+    for (let i = 0; i < N; i++) {
+        // span from -tNeg to +tPos
+        const frac = i / (N - 1);
+        const t = -r.tNeg + (r.tPos + r.tNeg) * frac;
+        const px = turb.homeX + t * a.dx;
+        const py = turb.homeY + t * a.dy;
+        turb.scanPts.push({ x: px, y: py });
     }
     // Baseline: quedarse en el sitio actual (score = 0)
     turb.currentWind = windAtRotor(turb.x, turb.y, turb);
@@ -463,35 +508,31 @@ function updateSearch(dt) {
             turb.globalTarget = null;
         }
 
-        // Escanear la mejor posición para esta turbina (objetivo: parque total)
-        const b = turbBounds(turb);
-        const GSCAN = 10;
-        const gnx = GSCAN;
-        const gny = Math.max(4, Math.round(GSCAN * (b.y1-b.y0) / Math.max(1, b.x1-b.x0)));
+        // Escaneo 1D a lo largo del eje diagonal (objetivo: parque total)
+        const ax = currentAxisVec();
+        const rng = effectiveAxisRange(turb);
+        const GSCAN = 30;
         const baseTotal = farmTotalWind();
 
-        let bestNet = baseTotal + 0.001;  // moverse si hay cualquier mejora colectiva real
+        let bestNet = baseTotal + 0.001;
         let bestX = turb.x, bestY = turb.y;
 
-        for (let ix = 0; ix < gnx; ix++) {
-            for (let iy = 0; iy < gny; iy++) {
-                const px = b.x0 + (b.x1-b.x0)*ix/Math.max(gnx-1,1);
-                const py = b.y0 + (b.y1-b.y0)*iy/Math.max(gny-1,1);
-                if (!isValidPos(turb, px, py) || !spacingOk(i, px, py)) continue;
-                const d = Math.hypot(px - turb.x, py - turb.y);
-                if (d < 4) continue;
-                const net = farmTotalWindIfMoved(i, px, py) - SEARCH_PENALTY * d;
-                if (net > bestNet) { bestNet = net; bestX = px; bestY = py; }
-            }
+        for (let k = 0; k < GSCAN; k++) {
+            const frac = k / (GSCAN - 1);
+            const t = -rng.tNeg + (rng.tPos + rng.tNeg) * frac;
+            const px = turb.homeX + t * ax.dx;
+            const py = turb.homeY + t * ax.dy;
+            if (!isValidPos(turb, px, py) || !spacingOk(i, px, py)) continue;
+            const d = Math.hypot(px - turb.x, py - turb.y);
+            if (d < 4) continue;
+            const net = farmTotalWindIfMoved(i, px, py) - SEARCH_PENALTY * d;
+            if (net > bestNet) { bestNet = net; bestX = px; bestY = py; }
         }
 
         if (bestX !== turb.x || bestY !== turb.y) {
-            const { tx, ty } = axisSnap(turb.x, turb.y, bestX, bestY);
-            // Validar la posición tras axisSnap; si viola spacing, usar la posición sin snap
-            const fx = spacingOk(i, tx, ty) ? tx : bestX;
-            const fy = spacingOk(i, tx, ty) ? ty : bestY;
-            if (fx !== turb.x || fy !== turb.y) {
-                turb.globalTarget = { x: fx, y: fy };
+            // Diagonal-only: skip axisSnap (which would push off-axis)
+            if (spacingOk(i, bestX, bestY)) {
+                turb.globalTarget = { x: bestX, y: bestY };
                 S.globalRefineAnyMoved = true;
             }
         }
@@ -570,11 +611,9 @@ function updateSearch(dt) {
                 turb.phase = 'done';
                 activateNext(ti+1);
             } else {
-                const { tx, ty } = axisSnap(turb.x, turb.y, turb.bestScan.x, turb.bestScan.y);
-                // Validar la posición tras axisSnap; si viola spacing, usar la posición sin snap
-                const fx = spacingOk(ti, tx, ty) ? tx : turb.bestScan.x;
-                const fy = spacingOk(ti, tx, ty) ? ty : turb.bestScan.y;
-                turb.targetX = fx; turb.targetY = fy;
+                // Diagonal-only: bestScan already lies on the axis line; do not snap.
+                turb.targetX = turb.bestScan.x;
+                turb.targetY = turb.bestScan.y;
                 turb.phase = 'moving';
             }
         }
@@ -584,20 +623,23 @@ function updateSearch(dt) {
         turb.x = turb.targetX; turb.y = turb.targetY;
         turb.phase = 'refining'; turb.refineN = 0;
     }
-    // ── Micro-ajuste (gradient, instantáneo) ──
+    // ── Micro-ajuste 1D a lo largo del eje diagonal ──
     else if (turb.phase === 'refining') {
         if (turb.refineTarget) {
             turb.x = turb.refineTarget.x; turb.y = turb.refineTarget.y;
             turb.refineTarget = null;
         } else {
             const step = 4;
+            const ax = currentAxisVec();
             const curWind = windAtRotor(turb.x, turb.y, turb);
-            let bestGain = 0.05, bx = 0, by = 0;
-            for (let a = 0; a < 8; a++) {
-                const ang = a/8*Math.PI*2;
-                const nx = turb.x + Math.cos(ang)*step;
-                const ny = turb.y + Math.sin(ang)*step;
+            let bestGain = 0.05, bdx = 0, bdy = 0;
+            for (const s of [+1, -1]) {
+                const dx = s * ax.dx * step, dy = s * ax.dy * step;
+                const nx = turb.x + dx, ny = turb.y + dy;
                 if (!isValidPos(turb, nx, ny)) continue;
+                // Stay within MOVE_RANGE of home along the axis
+                const p = projectTurb(turb, nx, ny);
+                if (Math.hypot(p.x - nx, p.y - ny) > 0.5) continue;
                 let ok = true;
                 for (let j = 0; j < S.turbines.length; j++) {
                     if (j === ti) continue;
@@ -605,13 +647,13 @@ function updateSearch(dt) {
                 }
                 if (!ok) continue;
                 const gain = windAtRotor(nx, ny, turb) - curWind;
-                if (gain > bestGain) { bestGain=gain; bx=Math.cos(ang)*step; by=Math.sin(ang)*step; }
+                if (gain > bestGain) { bestGain = gain; bdx = dx; bdy = dy; }
             }
-            if (bx || by) {
-                turb.refineTarget = { x: turb.x + bx, y: turb.y + by };
+            if (bdx || bdy) {
+                turb.refineTarget = { x: turb.x + bdx, y: turb.y + bdy };
             }
             turb.refineN++;
-            if (turb.refineN > 12 || (!bx && !by)) {
+            if (turb.refineN > 12 || (!bdx && !bdy)) {
                 turb.phase = 'done';
                 activateNext(ti+1);
             }
@@ -621,23 +663,26 @@ function updateSearch(dt) {
 
 function continuousOptimize() {
     if (S.searching) return;
+    const ax = currentAxisVec();
     for (let i = 0; i < S.turbines.length; i++) {
         const turb = S.turbines[i];
         if (turb.phase !== 'done') continue;
-        // Solo movimientos muy pequeños con mejora real significativa
         const step = 3;
         const curWind = windAtRotor(turb.x, turb.y, turb);
-        let bx = 0, by = 0, bestGain = 0.05;  // cualquier mejora real justifica ajuste
-        for (let a = 0; a < 8; a++) {
-            const ang = a/8*Math.PI*2;
-            const nx = turb.x + Math.cos(ang)*step;
-            const ny = turb.y + Math.sin(ang)*step;
+        let bdx = 0, bdy = 0, bestGain = 0.05;
+        for (const s of [+1, -1]) {
+            const nx = turb.x + s * ax.dx * step;
+            const ny = turb.y + s * ax.dy * step;
             if (!isValidPos(turb, nx, ny) || !spacingOk(i, nx, ny)) continue;
+            // Stay within MOVE_RANGE of home
+            const dx = nx - turb.homeX, dy = ny - turb.homeY;
+            const tNew = dx * ax.dx + dy * ax.dy;
+            if (Math.abs(tNew) > CFG.MOVE_RANGE) continue;
             const gain = windAtRotor(nx, ny, turb) - curWind;
-            if (gain > bestGain) { bestGain=gain; bx=Math.cos(ang)*0.4; by=Math.sin(ang)*0.4; }
+            if (gain > bestGain) { bestGain = gain; bdx = s * ax.dx * 0.4; bdy = s * ax.dy * 0.4; }
         }
-        if (bx || by) {
-            turb.x += bx; turb.y += by;
+        if (bdx || bdy) {
+            turb.x += bdx; turb.y += bdy;
             turb.trail.push({x:turb.x, y:turb.y});
             if (turb.trail.length > 600) turb.trail.shift();
         }
@@ -978,6 +1023,126 @@ function update(dt) {
         t.bladeSpeed = ws*0.06;
         t.bladeAngle = (t.bladeAngle||0) + t.bladeSpeed*dt;
     }
+    streamBoundTurbinePosition();
+}
+
+// ===================== SERIAL / WEBSERIAL =====================
+// ESP32 prototype mirroring. Uses Web Serial API (Chrome/Edge over
+// localhost or HTTPS). Streams the bound turbine's diagonal-axis
+// position (normalised 0..1000) to the physical hardware.
+function setSerialStatus(txt) {
+    S.serial.lastStatus = txt;
+    const el = document.getElementById('serial-status');
+    if (el) el.textContent = txt;
+}
+
+async function connectSerial() {
+    if (!('serial' in navigator)) {
+        setSerialStatus('Web Serial no soportado (usa Chrome/Edge)');
+        return;
+    }
+    if (S.serial.connected) return;
+    try {
+        const port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+        S.serial.port    = port;
+        S.serial.writer  = port.writable.getWriter();
+        S.serial.connected = true;
+        setSerialStatus('Conectado');
+        readSerialLoop().catch(() => {});
+    } catch (err) {
+        setSerialStatus('Error: ' + (err && err.message || err));
+    }
+}
+
+async function disconnectSerial() {
+    S.serial.connected = false;
+    try { await S.serial.writer?.close(); } catch {}
+    try { S.serial.writer?.releaseLock(); } catch {}
+    try { await S.serial.reader?.cancel(); } catch {}
+    try { await S.serial.port?.close(); } catch {}
+    S.serial.writer = null; S.serial.reader = null; S.serial.port = null;
+    S.serial.lastSentMotor = null;
+    setSerialStatus('Desconectado');
+    refreshSerialUI();
+}
+
+async function readSerialLoop() {
+    const port = S.serial.port;
+    if (!port || !port.readable) return;
+    const reader = port.readable.getReader();
+    S.serial.reader = reader;
+    const decoder = new TextDecoder();
+    try {
+        while (S.serial.connected) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            const text = decoder.decode(value, { stream: true });
+            for (const raw of S.serial.incoming.push(text)) {
+                handleSerialMessage(FFCore.parseLine(raw));
+            }
+        }
+    } catch {} finally {
+        try { reader.releaseLock(); } catch {}
+    }
+}
+
+function handleSerialMessage(msg) {
+    switch (msg.type) {
+        case 'ready':  setSerialStatus('Listo');           break;
+        case 'homed':  setSerialStatus('Calibrado (home)'); break;
+        case 'pos':    setSerialStatus('POS ' + msg.value); break;
+        case 'error':  setSerialStatus('ERR ' + msg.msg);   break;
+        case 'log':    /* silently */                       break;
+    }
+}
+
+async function serialWrite(line) {
+    if (!S.serial.connected || !S.serial.writer) return;
+    try {
+        await S.serial.writer.write(new TextEncoder().encode(line));
+    } catch (err) {
+        setSerialStatus('Tx error: ' + (err && err.message || err));
+    }
+}
+
+function bindTurbine(idx) {
+    S.serial.boundTurbIdx  = (Number.isInteger(idx) ? idx : -1);
+    S.serial.lastSentMotor = null;
+    refreshSerialUI();
+}
+
+function streamBoundTurbinePosition() {
+    if (!S.serial.connected) return;
+    const idx = S.serial.boundTurbIdx;
+    if (idx < 0 || idx >= S.turbines.length) return;
+    const turb = S.turbines[idx];
+    if (turb.homeX === undefined) return;
+    const proj  = FFCore.projectToAxis(turb.homeX, turb.homeY, turb.x, turb.y,
+                                       S.diagAxis, CFG.MOVE_RANGE);
+    const motor = FFCore.mapTtoMotor(proj.t, CFG.MOVE_RANGE);
+    const now = performance.now();
+    if (motor === S.serial.lastSentMotor) return;
+    if (now - S.serial.lastSendT < 50) return;       // throttle ~20 Hz
+    S.serial.lastSentMotor = motor;
+    S.serial.lastSendT     = now;
+    serialWrite(FFCore.formatMove(motor));
+}
+
+function refreshSerialUI() {
+    const sel = document.getElementById('serial-bind-select');
+    if (sel) {
+        sel.innerHTML = '<option value="-1">— ninguna —</option>' +
+            S.turbines.map((_, i) =>
+                `<option value="${i}" ${i===S.serial.boundTurbIdx?'selected':''}>Turbina ${i+1}</option>`
+            ).join('');
+    }
+    const cBtn = document.getElementById('btn-serial-connect');
+    const dBtn = document.getElementById('btn-serial-disconnect');
+    const hBtn = document.getElementById('btn-serial-home');
+    if (cBtn) cBtn.disabled = S.serial.connected;
+    if (dBtn) dBtn.disabled = !S.serial.connected;
+    if (hBtn) hBtn.disabled = !S.serial.connected;
 }
 
 function render() {
@@ -1380,7 +1545,12 @@ function setupUI() {
 
     document.getElementById("btn-add-turbine").addEventListener("click", spawnTurbine);
     document.getElementById("btn-remove-turbine").addEventListener("click", () => {
-        if (S.turbines.length) { S.turbines.pop(); updateTurbineList(); }
+        if (S.turbines.length) {
+            const lastIdx = S.turbines.length - 1;
+            if (S.serial.boundTurbIdx === lastIdx) bindTurbine(-1);
+            S.turbines.pop();
+            updateTurbineList();
+        }
     });
 
     document.getElementById("btn-start-search").addEventListener("click", startSearch);
@@ -1413,6 +1583,29 @@ function setupUI() {
     document.getElementById("chk-show-wake").addEventListener("change",e=>{S.showWake=e.target.checked;});
     document.getElementById("chk-show-wind").addEventListener("change",e=>{S.showWind=e.target.checked;});
     document.getElementById("chk-show-field").addEventListener("change",e=>{S.showField=e.target.checked;});
+
+    // ── Eje diagonal (NE-SW / NW-SE) ──
+    const axisBtn = document.getElementById("btn-toggle-axis");
+    if (axisBtn) {
+        const updateAxisLabel = () => { axisBtn.textContent = "Eje: " + S.diagAxis; };
+        updateAxisLabel();
+        axisBtn.addEventListener("click", () => {
+            S.diagAxis = (S.diagAxis === FFCore.AXIS_NE_SW)
+                ? FFCore.AXIS_NW_SE : FFCore.AXIS_NE_SW;
+            updateAxisLabel();
+        });
+    }
+
+    // ── Prototipo físico (Web Serial) ──
+    document.getElementById("btn-serial-connect")?.addEventListener("click", connectSerial);
+    document.getElementById("btn-serial-disconnect")?.addEventListener("click", disconnectSerial);
+    document.getElementById("btn-serial-home")?.addEventListener("click",
+        () => serialWrite(FFCore.formatHome()));
+    document.getElementById("serial-bind-select")?.addEventListener("change", e => {
+        bindTurbine(parseInt(e.target.value, 10));
+    });
+    setSerialStatus(S.serial.lastStatus);
+    refreshSerialUI();
 
     cvs.addEventListener("mousedown", onDown);
     cvs.addEventListener("mousemove", onMove);
@@ -1532,8 +1725,10 @@ function updateTurbineList() {
     document.getElementById("turbine-list").innerHTML = S.turbines.map((t,i) => {
         const col=CFG.COL_BLADE[i%CFG.COL_BLADE.length];
         const phaseLabel = t.phase==='scanning'?' [scan]':t.phase==='moving'?' [mov]':t.phase==='refining'?' [ref]':'';
-        return `<div class="list-item"><span style="color:${col}">● T${i+1}${phaseLabel}</span><span class="voltage">${(t.voltage||0).toFixed(1)}V</span></div>`;
+        const boundMark  = (S.serial.boundTurbIdx === i) ? ' 🔗' : '';
+        return `<div class="list-item"><span style="color:${col}">● T${i+1}${phaseLabel}${boundMark}</span><span class="voltage">${(t.voltage||0).toFixed(1)}V</span></div>`;
     }).join("");
+    refreshSerialUI();
 }
 
 // ===================== INIT =====================

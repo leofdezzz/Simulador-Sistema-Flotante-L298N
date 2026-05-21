@@ -956,3 +956,69 @@ label {
     color: #4a6a8a;
     font-variant-numeric: tabular-nums;
 }
+
+/* ====== Prototipo físico (Web Serial) ====== */
+.serial-section {
+    border-top: 2px solid #1a3a5a;
+    margin-top: 8px;
+    padding-top: 12px;
+}
+.serial-hint {
+    font-size: 0.7rem;
+    color: #6a8aa0;
+    margin-bottom: 8px;
+    line-height: 1.35;
+}
+.serial-buttons {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+.serial-buttons .action-btn {
+    flex: 1 1 auto;
+    min-width: 90px;
+    font-size: 0.78rem;
+    padding: 6px 8px;
+}
+.serial-bind {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.78rem;
+    margin-bottom: 8px;
+}
+.serial-bind select {
+    width: 100%;
+    padding: 6px 8px;
+    background: #0a1a2a;
+    color: #e0e6f0;
+    border: 1px solid #2a4a6a;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+.serial-status {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.78rem;
+    background: #0a1828;
+    border-radius: 4px;
+    padding: 6px 10px;
+}
+.serial-status-lbl { color: #6a8aa0; }
+#serial-status {
+    color: #4aaaf0;
+    font-family: 'Consolas', monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ====== Eje diagonal toggle ====== */
+.axis-btn {
+    background: #1a3a5a;
+    color: #c0e0f0;
+    margin-top: 8px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+.axis-btn:hover { background: #2a4a6a; }
