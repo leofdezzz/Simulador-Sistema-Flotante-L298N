@@ -91,14 +91,13 @@ test('firmware: serial baud is 115200', async () => {
     assert.match(src, /Serial\.begin\s*\(\s*115200\s*\)/);
 });
 
-test('firmware: defines L298N pins (EN + IN for A and B)', async () => {
+test('firmware: defines L298N IN pins for A and B (PWM on IN, no EN)', async () => {
     const src = await readFile(FW_SRC, 'utf8');
-    assert.match(src, /PIN_A_EN/,  'missing PIN_A_EN (ENA)');
     assert.match(src, /PIN_A_IN1/, 'missing PIN_A_IN1');
     assert.match(src, /PIN_A_IN2/, 'missing PIN_A_IN2');
-    assert.match(src, /PIN_B_EN/,  'missing PIN_B_EN (ENB)');
     assert.match(src, /PIN_B_IN3/, 'missing PIN_B_IN3');
     assert.match(src, /PIN_B_IN4/, 'missing PIN_B_IN4');
+    assert.doesNotMatch(src, /PIN_A_EN|PIN_B_EN/, 'this board has no ENA/ENB control');
 });
 
 test('firmware: defines four manual button pins', async () => {

@@ -57,7 +57,7 @@ Two-file React + Canvas architecture:
 
 ### Dual-motor prototype system
 
-The physical prototype uses **two DC gear motors (JGB-37)** driven by a single **L298N** dual H-bridge, in opposite corners of the tank. They work in coordinated pairs:
+The physical prototype uses **two DC gear motors (JGB-37)** driven by a single **L298N** dual H-bridge (ENA/ENB jumpered on; PWM applied directly on the IN pins), in opposite corners of the tank. They work in coordinated pairs:
 
 - **Motor A** (corner 1): position `pA ∈ [0..1000]`, 0 = retracted, 1000 = fully extended.
 - **Motor B** (corner 2): position `pB ∈ [0..1000]`.
@@ -89,12 +89,10 @@ Every turbine is constrained to slide along a single global diagonal (`axis` ∈
 
 | Function | GPIO | Notes |
 |----------|------|-------|
-| Motor A ENA | 13 | L298N PWM (speed) |
-| Motor A IN1 | 25 | L298N direction |
-| Motor A IN2 | 26 | L298N direction |
-| Motor B ENB | 23 | L298N PWM (speed) |
-| Motor B IN3 | 27 | L298N direction |
-| Motor B IN4 | 14 | L298N direction |
+| Motor A IN1 | 25 | L298N — PWM + direction (no ENA; jumper on) |
+| Motor A IN2 | 26 | L298N — PWM + direction |
+| Motor B IN3 | 27 | L298N — PWM + direction (no ENB; jumper on) |
+| Motor B IN4 | 14 | L298N — PWM + direction |
 | Botón izquierda | 32 | INPUT_PULLUP, a GND |
 | Botón derecha | 33 | INPUT_PULLUP, a GND |
 | Botón tensar | 18 | INPUT_PULLUP, a GND |

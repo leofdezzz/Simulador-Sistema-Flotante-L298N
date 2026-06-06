@@ -27,13 +27,14 @@ Coste orientativo: 18–30 €.
 
 Coincide con `firmware/arduino/FloatingFarm/FloatingFarm.ino`.
 
+> **Esta placa no usa ENA/ENB.** Deja los **jumpers de ENA y ENB puestos** (motores siempre habilitados). La velocidad (PWM) se controla directamente sobre los pines **IN**.
+
 ### Motor A (esquina 1) → salida OUT1/OUT2 del L298N
 
 | Señal ESP32 | GPIO | L298N |
 |-------------|------|-------|
-| ENA (PWM) | **13** | ENA |
-| IN1 | **25** | IN1 |
-| IN2 | **26** | IN2 |
+| IN1 (PWM + sentido) | **25** | IN1 |
+| IN2 (PWM + sentido) | **26** | IN2 |
 | — | — | OUT1 → motor A (+) |
 | — | — | OUT2 → motor A (–) |
 
@@ -41,13 +42,10 @@ Coincide con `firmware/arduino/FloatingFarm/FloatingFarm.ino`.
 
 | Señal ESP32 | GPIO | L298N |
 |-------------|------|-------|
-| ENB (PWM) | **23** | ENB |
-| IN3 | **27** | IN3 |
-| IN4 | **14** | IN4 |
+| IN3 (PWM + sentido) | **27** | IN3 |
+| IN4 (PWM + sentido) | **14** | IN4 |
 | — | — | OUT3 → motor B (+) |
 | — | — | OUT4 → motor B (–) |
-
-> Quita los **jumpers** de ENA y ENB del L298N para controlar la velocidad por PWM desde el ESP32. Si los dejas puestos, los motores van siempre a tope.
 
 ### Alimentación del L298N
 
@@ -80,11 +78,9 @@ Cableado de cada botón: un terminal a **GPIO**, el otro a **GND**.
    FUENTE MOTORES ──► +12V/VS (L298N)
                  └──► GND (L298N) ──┬── GND (ESP32)   ← masa común
                                      │
-   ESP32                          L298N
-    GPIO13 ───────────────────── ENA  (quitar jumper)
+   ESP32                          L298N   (jumpers ENA/ENB PUESTOS)
     GPIO25 ───────────────────── IN1
     GPIO26 ───────────────────── IN2     OUT1/OUT2 → Motor A (JGB-37)
-    GPIO23 ───────────────────── ENB  (quitar jumper)
     GPIO27 ───────────────────── IN3
     GPIO14 ───────────────────── IN4     OUT3/OUT4 → Motor B (JGB-37)
 
@@ -134,6 +130,7 @@ Si un motor gira al revés, intercambia sus dos cables en OUT1/OUT2 (o OUT3/OUT4
 
 ### 3.1. Calibración paso a paso
 
+0. **Jumpers.** Comprueba que los jumpers **ENA y ENB** del L298N están **puestos** (esta versión no controla esos pines).
 1. **Sentido de giro.** Tras `H`, pulsa **Der →**. Si la turbina va al lado equivocado, intercambia los dos cables de ese motor en el L298N (OUT1/OUT2 o OUT3/OUT4).
 2. **`MOTOR_PWM`.** Sube desde ~150 hasta que ambos motores arranquen suaves sin tirones (típico 180–230). Si van demasiado rápido para seguir la web, bájalo.
 3. **Distancia máxima por lado (`MM_PER_SIDE`).** Decide cuántos mm quieres que la turbina se aleje del centro hacia **cada** lado (el recorrido total será el doble). Ponlo en el sketch.

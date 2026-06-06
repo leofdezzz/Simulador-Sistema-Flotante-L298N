@@ -2,8 +2,9 @@
 // Floating Farm — ESP32 (Arduino IDE)
 // 2× motor DC JGB-37 con driver L298N. Sin endstops, 4 botones.
 //
-// IMPORTANTE: los JGB-37 son motores DC (no paso a paso). El L298N
-// controla velocidad por PWM (ENA/ENB) y sentido por IN1..IN4.
+// IMPORTANTE: los JGB-37 son motores DC (no paso a paso). Esta placa
+// L298N NO usa ENA/ENB (van fijos a 5V con sus jumpers puestos), así
+// que la velocidad (PWM) y el sentido se controlan en los pines IN.
 // La posición se estima por TIEMPO (lazo abierto): no hay encoder,
 // así que la posición física puede derivar; usa "Centro" o recoloca
 // la turbina a mano para resincronizar.
@@ -19,14 +20,14 @@
 // ============================================================
 
 // ----- Motor A (esquina 1) → salida OUT1/OUT2 del L298N -------
-const int PIN_A_EN  = 13;   // ENA (PWM velocidad)
-const int PIN_A_IN1 = 25;   // IN1 (sentido)
-const int PIN_A_IN2 = 26;   // IN2 (sentido)
+// Sin ENA/ENB: el PWM (velocidad) se aplica directo sobre los pines IN.
+// Deja los jumpers ENA/ENB del L298N PUESTOS (motores siempre habilitados).
+const int PIN_A_IN1 = 25;   // IN1 (PWM + sentido)
+const int PIN_A_IN2 = 26;   // IN2 (PWM + sentido)
 
 // ----- Motor B (esquina 2) → salida OUT3/OUT4 del L298N -------
-const int PIN_B_EN  = 23;   // ENB (PWM velocidad)
-const int PIN_B_IN3 = 27;   // IN3 (sentido)
-const int PIN_B_IN4 = 14;   // IN4 (sentido)
+const int PIN_B_IN3 = 27;   // IN3 (PWM + sentido)
+const int PIN_B_IN4 = 14;   // IN4 (PWM + sentido)
 
 // ----- Botones (LOW = pulsado, INPUT_PULLUP) -----------------
 const int PIN_BTN_LEFT  = 32;   // izquierda
@@ -79,26 +80,25 @@ long clampPm(long p) {
   return p;
 }
 
-// dir > 0 → adelante, dir < 0 → atrás, dir == 0 → parado
-void driveMotor(int enPin, int inX, int inY, int dir) {
+// dir > 0 → adelante, dir < 0 → atrás, dir == 0 → parado.
+// Sin ENA/ENB: el PWM va sobre el pin IN activo; el otro a 0.
+// (En ESP32, analogWrite(pin, 0) deja la salida en LOW.)
+void driveMotor(int inX, int inY, int dir) {
   if (dir > 0) {
-    digitalWrite(inX, HIGH);
-    digitalWrite(inY, LOW);
-    analogWrite(enPin, MOTOR_PWM);
+    analogWrite(inX, MOTOR_PWM);
+    analogWrite(inY, 0);
   } else if (dir < 0) {
-    digitalWrite(inX, LOW);
-    digitalWrite(inY, HIGH);
-    analogWrite(enPin, MOTOR_PWM);
+    analogWrite(inX, 0);
+    analogWrite(inY, MOTOR_PWM);
   } else {
-    digitalWrite(inX, LOW);
-    digitalWrite(inY, LOW);
-    analogWrite(enPin, 0);
+    analogWrite(inX, 0);
+    analogWrite(inY, 0);
   }
 }
 
 void stopMotors() {
-  driveMotor(PIN_A_EN, PIN_A_IN1, PIN_A_IN2, 0);
-  driveMotor(PIN_B_EN, PIN_B_IN3, PIN_B_IN4, 0);
+  driveMotor(PIN_A_IN1, PIN_A_IN2, 0);
+  driveMotor(PIN_B_IN3, PIN_B_IN4, 0);
 }
 
 void sendCurrentPos() {
@@ -126,12 +126,12 @@ bool updateMotion() {
   float dA = (float)g_tgtA - g_posA;
   if (fabs(dA) <= DEADBAND) {
     g_posA = (float)g_tgtA;
-    driveMotor(PIN_A_EN, PIN_A_IN1, PIN_A_IN2, 0);
+    driveMotor(PIN_A_IN1, PIN_A_IN2, 0);
   } else {
     int dir = (dA > 0) ? 1 : -1;
     float step = (fabs(dA) < maxStep) ? fabs(dA) : maxStep;
     g_posA += dir * step;
-    driveMotor(PIN_A_EN, PIN_A_IN1, PIN_A_IN2, dir);
+    driveMotor(PIN_A_IN1, PIN_A_IN2, dir);
     moving = true;
   }
 
@@ -139,12 +139,12 @@ bool updateMotion() {
   float dB = (float)g_tgtB - g_posB;
   if (fabs(dB) <= DEADBAND) {
     g_posB = (float)g_tgtB;
-    driveMotor(PIN_B_EN, PIN_B_IN3, PIN_B_IN4, 0);
+    driveMotor(PIN_B_IN3, PIN_B_IN4, 0);
   } else {
     int dir = (dB > 0) ? 1 : -1;
     float step = (fabs(dB) < maxStep) ? fabs(dB) : maxStep;
     g_posB += dir * step;
-    driveMotor(PIN_B_EN, PIN_B_IN3, PIN_B_IN4, dir);
+    driveMotor(PIN_B_IN3, PIN_B_IN4, dir);
     moving = true;
   }
   return moving;
@@ -290,10 +290,8 @@ void setup() {
   pinMode(PIN_BTN_LOOSE, INPUT_PULLUP);
   pinMode(PIN_LED, OUTPUT);
 
-  pinMode(PIN_A_EN,  OUTPUT);
   pinMode(PIN_A_IN1, OUTPUT);
   pinMode(PIN_A_IN2, OUTPUT);
-  pinMode(PIN_B_EN,  OUTPUT);
   pinMode(PIN_B_IN3, OUTPUT);
   pinMode(PIN_B_IN4, OUTPUT);
 
