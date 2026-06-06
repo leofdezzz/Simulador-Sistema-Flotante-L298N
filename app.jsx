@@ -324,31 +324,36 @@ function ParkPanel({
 
 function PrototypePanel({
   turbines, boundId, setBoundId,
-  serialStatus, setSerialStatus, axis,
+  serialStatus, onConnect, onDisconnect, onSerialSend, axis,
 }) {
   const bound = turbines.find(t => t.id === boundId);
-  // motor pos 0..1000
-  const motorPos = bound ? Math.round(((bound.t / window.CFG.MOVE_RANGE) * 500) + 500) : null;
-  const motorPct = motorPos !== null ? motorPos / 10 : 0;
+  // Dual motor: Motor A follows per-mille position directly,
+  // Motor B = 1000 - motorPosA (opposite corner pays out cable).
+  const motorPosA = bound ? Math.round(((bound.t / window.CFG.MOVE_RANGE) * 500) + 500) : null;
+  const motorPosB = motorPosA !== null ? 1000 - motorPosA : null;
+  const motorPctA = motorPosA !== null ? motorPosA / 10 : 0;
+  const motorPctB = motorPosB !== null ? motorPosB / 10 : 0;
 
-  // Simulated connect
-  const connect = () => {
-    if (serialStatus === 'online') return;
-    setSerialStatus('connecting');
-    setTimeout(() => setSerialStatus('online'), 1100);
-  };
-  const disconnect = () => {
-    setSerialStatus('disconnected');
-  };
-  const sendHome = () => {
-    // visual ping only
-    const el = document.querySelector('.motor-pos');
-    if (el) {
-      el.animate(
-        [{ filter: 'brightness(1)' }, { filter: 'brightness(2.5)' }, { filter: 'brightness(1)' }],
-        { duration: 480 }
-      );
+  const flashTracks = () => {
+    for (const sel of ['.motor-pos-a', '.motor-pos-b']) {
+      const el = document.querySelector(sel);
+      if (el) {
+        el.animate(
+          [{ filter: 'brightness(1)' }, { filter: 'brightness(2.5)' }, { filter: 'brightness(1)' }],
+          { duration: 480 }
+        );
+      }
     }
+  };
+
+  const sendCenter = () => {
+    onSerialSend('H\n');
+    flashTracks();
+  };
+
+  const sendJog = (dir) => {
+    onSerialSend(`J ${dir}\n`);
+    flashTracks();
   };
 
   const statusTxt = {
@@ -368,7 +373,7 @@ function PrototypePanel({
       <div className="serial-card">
         <div className="serial-head">
           <div style={{ fontSize: 11, letterSpacing: '0.15em', color: 'var(--ink-dim)', textTransform: 'uppercase' }}>
-            Web Serial · DRV8825 · NEMA17
+            Web Serial · L298N · JGB-37 × 2
           </div>
           <div className={`serial-status ${serialStatus}`}>
             <span className="sdot"></span>
@@ -378,13 +383,20 @@ function PrototypePanel({
 
         <div className="btn-row">
           {serialStatus !== 'online' ? (
-            <button className="btn primary" onClick={connect} disabled={serialStatus === 'connecting'}>
+            <button className="btn primary" onClick={onConnect} disabled={serialStatus === 'connecting'}>
               {serialStatus === 'connecting' ? 'Conectando…' : 'Conectar'}
             </button>
           ) : (
-            <button className="btn" onClick={disconnect}>Desconectar</button>
+            <button className="btn" onClick={onDisconnect}>Desconectar</button>
           )}
-          <button className="btn" onClick={sendHome} disabled={serialStatus !== 'online'}>Home</button>
+          <button className="btn" onClick={sendCenter} disabled={serialStatus !== 'online'} title="Centro 500/500">Centro</button>
+        </div>
+
+        <div className="btn-row" style={{ marginTop: 8 }}>
+          <button className="btn" onClick={() => sendJog('L')} disabled={serialStatus !== 'online'} title="Hacia esquina A">← Izq</button>
+          <button className="btn" onClick={() => sendJog('R')} disabled={serialStatus !== 'online'} title="Hacia esquina B">Der →</button>
+          <button className="btn" onClick={() => sendJog('T')} disabled={serialStatus !== 'online'} title="Ambos recogen cable">Tensar</button>
+          <button className="btn" onClick={() => sendJog('D')} disabled={serialStatus !== 'online'} title="Ambos sueltan cable">Destensar</button>
         </div>
 
         <div className="serial-bind">
@@ -401,13 +413,25 @@ function PrototypePanel({
         </div>
 
         <div>
+          <div style={{ fontSize: 10, letterSpacing: '0.1em', color: 'var(--ink-fade)', marginBottom: 2, textTransform: 'uppercase' }}>Motor A — esquina 1</div>
           <div className="motor-track">
             <div className="scale"></div>
-            <div className="motor-pos" style={{ left: `calc(${motorPct}% - 1.5px)`, opacity: bound ? 1 : 0 }}></div>
+            <div className="motor-pos motor-pos-a" style={{ left: `calc(${motorPctA}% - 1.5px)`, opacity: bound ? 1 : 0 }}></div>
           </div>
           <div className="motor-readout">
             <span>M 0</span>
-            <span className="mono">{bound ? `M ${String(motorPos).padStart(4, '0')}` : '—'}</span>
+            <span className="mono">{bound ? `M ${String(motorPosA).padStart(4, '0')}` : '—'}</span>
+            <span>M 1000</span>
+          </div>
+
+          <div style={{ fontSize: 10, letterSpacing: '0.1em', color: 'var(--ink-fade)', marginBottom: 2, marginTop: 10, textTransform: 'uppercase' }}>Motor B — esquina 2</div>
+          <div className="motor-track">
+            <div className="scale"></div>
+            <div className="motor-pos motor-pos-b" style={{ left: `calc(${motorPctB}% - 1.5px)`, opacity: bound ? 1 : 0 }}></div>
+          </div>
+          <div className="motor-readout">
+            <span>M 0</span>
+            <span className="mono">{bound ? `M ${String(motorPosB).padStart(4, '0')}` : '—'}</span>
             <span>M 1000</span>
           </div>
         </div>
@@ -564,6 +588,76 @@ function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [boundId, setBoundId] = useState(null);
   const [serialStatus, setSerialStatus] = useState('disconnected');
+  const serialRef = useRef({ port: null, writer: null, readerTask: null, abort: null });
+
+  const sendSerial = useCallback(async (cmd) => {
+    const w = serialRef.current.writer;
+    if (!w) return;
+    try {
+      await w.write(new TextEncoder().encode(cmd));
+    } catch {
+      setSerialStatus('error');
+    }
+  }, []);
+
+  const disconnectSerial = useCallback(async () => {
+    const s = serialRef.current;
+    if (s.abort) s.abort.abort();
+    if (s.readerTask) {
+      try { await s.readerTask; } catch { /* closed */ }
+    }
+    if (s.writer) {
+      try { await s.writer.close(); } catch { /* already closed */ }
+    }
+    if (s.port) {
+      try { await s.port.close(); } catch { /* already closed */ }
+    }
+    serialRef.current = { port: null, writer: null, readerTask: null, abort: null };
+    setSerialStatus('disconnected');
+  }, []);
+
+  const connectSerial = useCallback(async () => {
+    if (serialStatus === 'online' || serialStatus === 'connecting') return;
+    if (!navigator.serial) {
+      setSerialStatus('error');
+      return;
+    }
+    setSerialStatus('connecting');
+    try {
+      const port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+      const writer = port.writable.getWriter();
+      const abort = new AbortController();
+      serialRef.current = { port, writer, readerTask: null, abort };
+
+      const readerTask = (async () => {
+        const reader = port.readable.getReader();
+        let buf = '';
+        try {
+          while (!abort.signal.aborted) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += new TextDecoder().decode(value);
+            const lines = buf.split('\n');
+            buf = lines.pop();
+            for (const line of lines) {
+              const t = line.trim();
+              if (t === 'READY' || t === 'HOMED') setSerialStatus('online');
+            }
+          }
+        } finally {
+          try { reader.releaseLock(); } catch { /* noop */ }
+        }
+      })();
+      serialRef.current.readerTask = readerTask;
+      setSerialStatus('online');
+    } catch {
+      await disconnectSerial();
+    }
+  }, [serialStatus, disconnectSerial]);
+
+  useEffect(() => () => { disconnectSerial(); }, [disconnectSerial]);
+
   const [searching, setSearching] = useState(false);
   const [history, setHistory] = useState([]);
   const [, force] = useState(0);
@@ -800,7 +894,10 @@ function App() {
         <PrototypePanel
           turbines={turbines}
           boundId={boundId} setBoundId={setBoundId}
-          serialStatus={serialStatus} setSerialStatus={setSerialStatus}
+          serialStatus={serialStatus}
+          onConnect={connectSerial}
+          onDisconnect={disconnectSerial}
+          onSerialSend={sendSerial}
           axis={axis}
         />
         <ViewPanel

@@ -63,27 +63,52 @@ export function mapMotorToT(pos, range) {
 
 // --- Serial protocol ---------------------------------------------------
 // Sim → ESP32:
-//   "H\n"        — home (run endstop sequence)
-//   "M <p>\n"    — move to per-mille position p (0..1000)
-//   "?\n"        — query current position
-//   "S\n"        — stop / disable motor
+//   "H\n"            — move both motors to center (500/500 per-mille)
+//   "M <pA> <pB>\n"  — move motor A to pA, motor B to pB (0..1000 each)
+//   "M <p>\n"        — (legacy) move motor A to p, motor B to (1000 - p)
+//   "J L|R|T|D\n"    — jog left/right/tense/loose (one step)
+//   "?\n"            — query current positions
+//   "S\n"            — stop / disable both motors
 // ESP32 → Sim (one message per line, '\n' terminated):
-//   "READY"      — boot complete and ready for commands (post-home)
-//   "HOMED"      — homing finished
-//   "POS <p>"    — current per-mille position
-//   "ERR <msg>"  — error string
-//   "LOG <msg>"  — informational log
-export const PROTOCOL_VERSION = 1;
+//   "READY"           — boot complete (assumed center, no endstops)
+//   "HOMED"           — centered (after H or boot)
+//   "POS <pA> <pB>"   — current per-mille positions (motor A, motor B)
+//   "ERR <msg>"       — error string
+//   "LOG <msg>"       — informational log
+export const PROTOCOL_VERSION = 2;
 export const MOTOR_MAX = 1000;
 export const MOTOR_MIN = 0;
+
+export const MOTOR_CENTER = 500;
 
 export function formatHome()   { return 'H\n'; }
 export function formatStatus() { return '?\n'; }
 export function formatStop()   { return 'S\n'; }
+
+/** @param {'L'|'R'|'T'|'D'} dir left, right, tense (tensar), loose (destensar) */
+export function formatJog(dir) {
+    const d = String(dir).toUpperCase();
+    if (!/^[LRTD]$/.test(d)) throw new Error('jog dir must be L, R, T, or D');
+    return `J ${d}\n`;
+}
+
 export function formatMove(motorPos) {
     if (!Number.isFinite(motorPos)) throw new Error('motorPos must be finite');
     const p = Math.max(MOTOR_MIN, Math.min(MOTOR_MAX, Math.round(motorPos)));
     return `M ${p}\n`;
+}
+
+export function formatDualMove(motorA, motorB) {
+    if (!Number.isFinite(motorA) || !Number.isFinite(motorB)) {
+        throw new Error('motor positions must be finite');
+    }
+    const a = Math.max(MOTOR_MIN, Math.min(MOTOR_MAX, Math.round(motorA)));
+    const b = Math.max(MOTOR_MIN, Math.min(MOTOR_MAX, Math.round(motorB)));
+    return `M ${a} ${b}\n`;
+}
+
+export function formatSingleAsDual(p) {
+    return formatDualMove(p, MOTOR_MAX - p);
 }
 
 // Parse one trimmed line into a typed object.
@@ -93,7 +118,17 @@ export function parseLine(line) {
     if (l === 'READY')  return { type: 'ready' };
     if (l === 'HOMED')  return { type: 'homed' };
     if (l.startsWith('POS ')) {
-        const n = Number.parseInt(l.slice(4), 10);
+        const payload = l.slice(4);
+        const parts = payload.split(/\s+/);
+        if (parts.length === 2) {
+            const a = Number.parseInt(parts[0], 10);
+            const b = Number.parseInt(parts[1], 10);
+            if (Number.isFinite(a) && Number.isFinite(b)) {
+                return { type: 'pos', valueA: a, valueB: b };
+            }
+            return { type: 'error', msg: `bad POS payload: ${l}` };
+        }
+        const n = Number.parseInt(payload, 10);
         if (Number.isFinite(n)) return { type: 'pos', value: n };
         return { type: 'error', msg: `bad POS payload: ${l}` };
     }
