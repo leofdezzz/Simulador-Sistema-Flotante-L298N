@@ -241,6 +241,25 @@ Despues abre **http://localhost:3000** en Chrome o Edge.
 
 > Para detener el servidor: `Ctrl+C` en la terminal donde corre.
 
+## Publicar en internet (acceso desde cualquier sitio)
+
+El simulador es **solo archivos estaticos** (`index.html`, `app.jsx`, `sim.jsx`…). La forma mas sencilla es **GitHub Pages** (gratis, HTTPS):
+
+| Opcion | URL tras desplegar | Dificultad |
+|--------|-------------------|------------|
+| **GitHub Pages** (recomendado) | https://leofdezzz.github.io/Simulador-Sistema-Flotante-L298N/ | Automatico con cada `git push` |
+| Render static site | `https://tu-app.onrender.com` | Crear cuenta en [render.com](https://render.com), Static Site, repo GitHub |
+| Netlify | `https://tu-app.netlify.app` | [netlify.com](https://netlify.com) → Import from Git |
+
+### GitHub Pages (ya configurado en este repo)
+
+1. Repositorio: **https://github.com/leofdezzz/Simulador-Sistema-Flotante-L298N**
+2. Cada push a `master` despliega el simulador via GitHub Actions (`.github/workflows/pages.yml`).
+3. La URL publica es: **https://leofdezzz.github.io/Simulador-Sistema-Flotante-L298N/**
+4. La primera vez puede tardar 1–2 minutos; luego en **Settings → Pages** del repo veras el enlace.
+
+> **Web Serial (ESP32):** el simulador web se abre desde cualquier PC o movil, pero **Conectar** al ESP32 solo funciona en **Chrome o Edge** en el **ordenador donde esta enchufado el USB** del ESP32 (HTTPS o localhost). Desde el movil puedes ver el simulador; para controlar la maqueta fisica usa el portatil con el cable USB.
+
 ### Tests
 
 ```bash
@@ -249,15 +268,12 @@ npm test
 
 Ejecuta la suite `node --test` (geometria diagonal, protocolo serial contra un mock del ESP32, checks estaticos del firmware y del wiring del simulador). No requiere navegador ni hardware. Los pasos que dependen de PlatformIO se saltan automaticamente si `pio` no esta en el `PATH`.
 
-### Firmware ESP32
+### Firmware ESP32 (maqueta L298N + JGB-37)
 
-```bash
-npm run firmware:build     # compila
-npm run firmware:upload    # flashea por USB
-npm run firmware:monitor   # consola serie 115200
-```
+Sketch para **Arduino IDE**: `firmware/arduino/FloatingFarm/FloatingFarm.ino`  
+Detalles de cableado, calibracion y protocolo serie en [`docs/HARDWARE.md`](docs/HARDWARE.md).
 
-Requiere [PlatformIO](https://platformio.org/) instalado. Detalles de hardware y conexionado en [`docs/HARDWARE.md`](docs/HARDWARE.md).
+Opcional con PlatformIO: `firmware/esp32/` (`pio run -t upload`).
 
 ## Flujo de uso
 
