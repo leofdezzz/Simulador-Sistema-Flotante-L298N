@@ -1,0 +1,16 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Node (si se añaden deps en el futuro)
+node_modules/
+
+# Arduino / ESP32 builds locales
+build/
+.pio/

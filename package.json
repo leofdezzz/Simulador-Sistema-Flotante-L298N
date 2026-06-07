@@ -1,14 +1,11 @@
 {
-  "name": "simulador-sistema-flotante",
-  "version": "0.2.0",
-  "description": "Floating Farm simulator + ESP32 prototype bridge.",
+  "name": "simulador-sistema-flotante-l298n",
+  "version": "0.3.0",
+  "description": "Simulador de granja flotante eólica + firmware ESP32 (L298N + JGB-37).",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test --test-reporter=spec \"tests/**/*.test.mjs\"",
-    "serve": "python -m http.server 3000",
-    "firmware:build": "pio run -d firmware/esp32",
-    "firmware:upload": "pio run -d firmware/esp32 -t upload",
-    "firmware:monitor": "pio device monitor -b 115200"
+    "serve": "python -m http.server 3000"
   }
 }

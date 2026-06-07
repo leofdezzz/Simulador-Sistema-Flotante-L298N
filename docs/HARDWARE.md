@@ -198,14 +198,6 @@ Maqueta:    −MM_PER_SIDE ..... 0 (centro) ....... +MM_PER_SIDE
 
 Deberías ver `LOG boot`, `LOG assumed center`, `HOMED`, `READY`.
 
-### PlatformIO (opcional)
-
-```bash
-cd firmware/esp32
-pio run -t upload
-pio device monitor
-```
-
 ---
 
 ## 7. Opcional: lazo cerrado con encoder
