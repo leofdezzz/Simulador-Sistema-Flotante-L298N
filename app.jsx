@@ -115,26 +115,12 @@ function seedTurbines(w, h) {
 }
 
 // ── Placement validation ────────────────────────────────────
-// Two failure modes:
-//   1. MIN_HOME_DIST  — turbines too close (collision risk)
-//   2. MIN_LANE_PERP  — diagonal swimlanes overlap perpendicular to the axis;
-//      if wind ever blows parallel to the axis, the rear turbine would always
-//      sit in the front turbine's wake with nowhere to slide to.
 const MIN_HOME_DIST = 75;
-const MIN_LANE_PERP = 55;
-function validatePlacement(proposed, others, axis) {
-  const a = window.axisVec(axis);
-  const perpX = -a.y, perpY = a.x;
+function validatePlacement(proposed, others) {
   for (const o of others) {
-    const dx = proposed.x - o.homeX;
-    const dy = proposed.y - o.homeY;
-    const dist = Math.hypot(dx, dy);
+    const dist = Math.hypot(proposed.x - o.homeX, proposed.y - o.homeY);
     if (dist < MIN_HOME_DIST) {
       return { ok: false, reason: 'Distancia mínima', code: 'DIST' };
-    }
-    const perpAbs = Math.abs(dx * perpX + dy * perpY);
-    if (perpAbs < MIN_LANE_PERP) {
-      return { ok: false, reason: 'Carriles solapados', code: 'LANE' };
     }
   }
   return { ok: true };
@@ -788,7 +774,7 @@ function App() {
     const y = e.clientY - rect.top - drag.offsetY;
 
     const others = turbinesRef.current.filter(t => t.id !== drag.id);
-    const v = validatePlacement({ x, y }, others, axis);
+    const v = validatePlacement({ x, y }, others);
     if (v.ok) {
       drag.lastValid = { x, y };
       setDragWarn(null);
@@ -839,7 +825,7 @@ function App() {
       while (tries-- > 0) {
         hx = 160 + Math.random() * (w - 320);
         hy = 130 + Math.random() * (h - 260);
-        const v = validatePlacement({ x: hx, y: hy }, arr, axis);
+        const v = validatePlacement({ x: hx, y: hy }, arr);
         if (v.ok) { ok = true; break; }
       }
       if (!ok) {
@@ -935,11 +921,7 @@ function App() {
             <div className="dw-body">
               <div className="dw-head">⚠ Posición no válida</div>
               <div className="dw-msg">{dragWarn.reason}</div>
-              <div className="dw-sub">
-                {dragWarn.reason === 'Carriles solapados'
-                  ? 'Las turbinas comparten el mismo eje diagonal'
-                  : `Mantén al menos ${MIN_HOME_DIST} px entre turbinas`}
-              </div>
+              <div className="dw-sub">Mantén al menos {MIN_HOME_DIST} px entre turbinas</div>
             </div>
           </div>
         )}
