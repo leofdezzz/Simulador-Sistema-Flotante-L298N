@@ -114,18 +114,6 @@ function seedTurbines(w, h) {
   );
 }
 
-// ── Placement validation ────────────────────────────────────
-const MIN_HOME_DIST = 75;
-function validatePlacement(proposed, others) {
-  for (const o of others) {
-    const dist = Math.hypot(proposed.x - o.homeX, proposed.y - o.homeY);
-    if (dist < MIN_HOME_DIST) {
-      return { ok: false, reason: 'Distancia mínima', code: 'DIST' };
-    }
-  }
-  return { ok: true };
-}
-
 // ─────────────────────────────────────────────────────────────
 // Components
 // ─────────────────────────────────────────────────────────────
@@ -744,9 +732,7 @@ function App() {
   }, []);
 
   // ── Canvas interactions: select + free drag (search constrains to axis)
-  // Placement is validated live; invalid spots flash red and snap back on drop.
   const dragRef = useRef(null);
-  const [dragWarn, setDragWarn] = useState(null);
   const onCanvasDown = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left, y = e.clientY - rect.top;
@@ -757,13 +743,7 @@ function App() {
       const turb = turbinesRef.current.find(t => t.id === id);
       const p = window.turbinePos(turb, axis);
       setSelectedId(id);
-      dragRef.current = {
-        id,
-        offsetX: x - p.x,
-        offsetY: y - p.y,
-        // last position that satisfied the placement rules — snap back here on bad drop
-        lastValid: { x: turb.homeX, y: turb.homeY },
-      };
+      dragRef.current = { id, offsetX: x - p.x, offsetY: y - p.y };
     }
   };
   const onCanvasMove = (e) => {
@@ -772,46 +752,14 @@ function App() {
     const rect = canvasRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left - drag.offsetX;
     const y = e.clientY - rect.top - drag.offsetY;
-
-    const others = turbinesRef.current.filter(t => t.id !== drag.id);
-    const v = validatePlacement({ x, y }, others);
-    if (v.ok) {
-      drag.lastValid = { x, y };
-      setDragWarn(null);
-    } else {
-      setDragWarn({
-        x: e.clientX - rect.left, y: e.clientY - rect.top,
-        reason: v.reason,
-      });
-    }
-
     const dragId = drag.id;
     setTurbines(arr => arr.map(turb => {
       if (turb.id !== dragId) return turb;
-      return { ...turb, homeX: x, homeY: y, t: 0, _invalid: !v.ok };
+      return { ...turb, homeX: x, homeY: y, t: 0 };
     }));
   };
   const onCanvasUp = () => {
-    if (!dragRef.current) {
-      setDragWarn(null);
-      return;
-    }
-    const drag = dragRef.current;
-    setTurbines(arr => arr.map(turb => {
-      if (turb.id !== drag.id) return { ...turb, _invalid: false };
-      if (turb._invalid && drag.lastValid) {
-        return {
-          ...turb,
-          homeX: drag.lastValid.x,
-          homeY: drag.lastValid.y,
-          t: 0,
-          _invalid: false,
-        };
-      }
-      return { ...turb, _invalid: false };
-    }));
     dragRef.current = null;
-    setDragWarn(null);
   };
 
   // ── Turbine actions
@@ -820,19 +768,9 @@ function App() {
     const w = rect.width, h = rect.height;
     setTurbines(arr => {
       const id = (arr.reduce((m, x) => Math.max(m, x.id), 0) || 0) + 1;
-      // try to find a spot that satisfies placement rules
-      let tries = 60, hx = w / 2, hy = h / 2, ok = false;
-      while (tries-- > 0) {
-        hx = 160 + Math.random() * (w - 320);
-        hy = 130 + Math.random() * (h - 260);
-        const v = validatePlacement({ x: hx, y: hy }, arr);
-        if (v.ok) { ok = true; break; }
-      }
-      if (!ok) {
-        // fall back: keep the last guess but flag it visually so user can move it
-      }
-      const newT = window.makeTurbine(id, hx, hy);
-      return [...arr, newT];
+      const hx = 160 + Math.random() * (w - 320);
+      const hy = 130 + Math.random() * (h - 260);
+      return [...arr, window.makeTurbine(id, hx, hy)];
     });
   };
   const removeTurbine = (id) => {
@@ -915,16 +853,6 @@ function App() {
         />
         <TelemetryCard turbine={selected} axis={axis} windDeg={windDeg} boundId={boundId} />
 
-        {dragWarn && (
-          <div className="drag-warn" style={{ left: dragWarn.x, top: dragWarn.y }}>
-            <div className="dw-bar"></div>
-            <div className="dw-body">
-              <div className="dw-head">⚠ Posición no válida</div>
-              <div className="dw-msg">{dragWarn.reason}</div>
-              <div className="dw-sub">Mantén al menos {MIN_HOME_DIST} px entre turbinas</div>
-            </div>
-          </div>
-        )}
       </main>
 
       <footer className="foot">
